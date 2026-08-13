@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>图片批量裁剪工具</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    background: #1e1f24; color: #e8e8ea;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  header {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 10px 16px; background: #26272d; border-bottom: 1px solid #3a3b42;
+  }
+  .title { font-size: 15px; font-weight: 600; color: #fff; white-space: nowrap; }
+  .hint { font-size: 12px; color: #8a8a92; }
+  .btn {
+    background: #3b82f6; border: none; color: #fff; padding: 8px 16px;
+    border-radius: 6px; cursor: pointer; font-size: 14px; white-space: nowrap;
+  }
+  .btn:hover { background: #2f6fdb; }
+  .btn:disabled { background: #555; cursor: not-allowed; opacity: .55; }
+  .btn.ghost { background: #3a3b42; }
+  .btn.ghost:hover { background: #4a4b55; }
+  .btn.save { background: #22c55e; }
+  .btn.save:hover { background: #1baa50; }
+  .btn.small { padding: 6px 10px; font-size: 13px; }
+  label.fld { font-size: 13px; color: #b9b9c0; white-space: nowrap; }
+  input[type=number] {
+    width: 88px; padding: 6px 8px; background: #1e1f24; color: #fff;
+    border: 1px solid #3a3b42; border-radius: 6px; font-size: 14px;
+  }
+  #progress { font-size: 13px; color: #b9b9c0; margin-left: auto; white-space: nowrap; }
+  main { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+  #stage {
+    flex: 1; position: relative; display: flex; align-items: center; justify-content: center;
+    overflow: hidden; cursor: grab; touch-action: none; min-width: 0;
+    background: repeating-conic-gradient(#26272d 0% 25%, #1e1f24 0% 50%) 50% / 24px 24px;
+  }
+  #stage.dragging { cursor: grabbing; }
+  #frame {
+    position: relative; overflow: hidden; background: #000;
+    border: 1px solid rgba(255,255,255,.35);
+    box-shadow: 0 0 0 3px rgba(59,130,246,.4), 0 10px 40px rgba(0,0,0,.5);
+  }
+  #layerWrap {
+    position: absolute; top: 0; left: 0; will-change: transform;
+    line-height: 0;
+  }
+  #layerWrap img {
+    width: 100%; height: 100%; display: block;
+    user-select: none; -webkit-user-drag: none; pointer-events: none;
+  }
+  #guide { position: absolute; inset: 0; pointer-events: none; }
+  #guide::before, #guide::after {
+    content: ""; position: absolute; background: rgba(255,255,255,.16);
+  }
+  #guide::before { left: 33.3333%; right: 33.3333%; top: 0; bottom: 0; }
+  #guide::after  { top: 33.3333%; bottom: 33.3333%; left: 0; right: 0; }
+  #info {
+    position: absolute; left: 12px; bottom: 12px; font-size: 12px; color: #ddd;
+    background: rgba(0,0,0,.55); padding: 5px 10px; border-radius: 5px;
+    font-variant-numeric: tabular-nums;
+  }
+  #empty {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; color: #888; font-size: 15px;
+  }
+  aside {
+    width: 178px; background: #1a1b1f; border-left: 1px solid #3a3b42;
+    overflow-y: auto; padding: 10px; flex-shrink: 0;
+  }
+  aside h3 { font-size: 12px; color: #888; margin-bottom: 8px; font-weight: 600; }
+  .thumb {
+    position: relative; margin-bottom: 8px; cursor: pointer;
+    border: 2px solid transparent; border-radius: 6px; overflow: hidden; background: #222;
+  }
+  .thumb.active { border-color: #3b82f6; }
+  .thumb img { width: 100%; display: block; }
+  .thumb .idx {
+    position: absolute; left: 4px; top: 4px; background: rgba(0,0,0,.65);
+    color: #fff; font-size: 10px; padding: 1px 5px; border-radius: 3px;
+  }
+  .thumb .done {
+    position: absolute; right: 4px; top: 4px; background: #22c55e; color: #fff;
+    font-size: 10px; padding: 1px 5px; border-radius: 3px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <span class="title">图片批量裁剪</span>
+  <button class="btn" id="pickBtn">选择文件夹</button>
+  <input type="file" id="fileInput" webkitdirectory multiple hidden>
+  <span class="hint">拖拽图片调整位置 · 保存后自动进入下一张</span>
+  <span class="hint" style="margin-left:auto">裁剪分辨率</span>
+  <input type="number" id="outW" value="1080" min="1">
+  <span style="color:#888">×</span>
+  <input type="number" id="outH" value="1080" min="1">
+  <button class="btn ghost small" id="applyBtn">应用</button>
+  <button class="btn small" id="centerBtn">居中</button>
+  <button class="btn save" id="saveBtn" disabled>保存并下一张</button>
+  <button class="btn ghost" id="prevBtn" disabled>上一张</button>
+  <span id="progress"></span>
+</header>
+<main>
+  <div id="stage">
+    <div id="empty">📁 点击「选择文件夹」导入图片</div>
+    <div id="frame" hidden>
+      <div id="layerWrap"></div>
+      <div id="guide"></div>
+    </div>
+    <div id="info" hidden></div>
+  </div>
+  <aside id="thumbPanel" hidden>
+    <h3>图片列表</h3>
+    <div id="thumbs"></div>
+  </aside>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const fileInput = $('fileInput'), pickBtn = $('pickBtn');
+const stage = $('stage'), frame = $('frame'), layerWrap = $('layerWrap');
+const emptyEl = $('empty'), infoEl = $('info');
+const saveBtn = $('saveBtn'), prevBtn = $('prevBtn'), centerBtn = $('centerBtn');
+const applyBtn = $('applyBtn');
+const outWEl = $('outW'), outHEl = $('outH');
+const progressEl = $('progress'), thumbPanel = $('thumbPanel'), thumbsEl = $('thumbs');
+
+const state = {
+  files: [],        // {name, blob, thumb, crop:{x,y}|null, done}
+  idx: -1,
+  outW: 1080, outH: 1080,
+  imgW: 0, imgH: 0, // 原图尺寸
+  k: 1,             // 显示比例 px/原图像素
+  x: 0, y: 0,       // 裁剪窗口左上角(原图像素坐标)
+  W: 0, H: 0,       // 裁剪窗口尺寸(原图像素)
+  centered: true,
+  loadToken: 0,
+};
+let lastUrl = null;
+let drag = null;
+
+/* ---------- 布局 / 渲染 ---------- */
+function computeLayout() {
+  const imgW = state.imgW, imgH = state.imgH;
+  const r = state.outW / state.outH;
+  if (imgW / imgH > r) { state.H = imgH; state.W = imgH * r; }
+  else { state.W = imgW; state.H = imgW / r; }
+  if (state.centered) {
+    state.x = (imgW - state.W) / 2;
+    state.y = (imgH - state.H) / 2;
+  }
+  clamp();
+}
+function clamp() {
+  const maxX = state.imgW - state.W;
+  state.x = maxX <= 0 ? 0 : Math.max(0, Math.min(maxX, state.x));
+  const maxY = state.imgH - state.H;
+  state.y = maxY <= 0 ? 0 : Math.max(0, Math.min(maxY, state.y));
+  const f = state.files[state.idx];
+  if (f) f.crop = { x: state.x, y: state.y };
+}
+function render() {
+  if (state.idx < 0 || !state.imgW) return;
+  const W = state.W, H = state.H;
+  const k = Math.min(
+    (stage.clientWidth - 60) / W,
+    (stage.clientHeight - 130) / H
+  );
+  state.k = k;
+  frame.style.width = Math.round(W * k) + 'px';
+  frame.style.height = Math.round(H * k) + 'px';
+  layerWrap.style.width = Math.round(state.imgW * k) + 'px';
+  layerWrap.style.height = Math.round(state.imgH * k) + 'px';
+  applyTransform();
+  frame.hidden = false;
+  emptyEl.hidden = true;
+  infoEl.hidden = false;
+}
+function applyTransform() {
+  layerWrap.style.transform =
+    'translate(' + (-state.x * state.k) + 'px,' + (-state.y * state.k) + 'px)';
+}
+function updateInfo() {
+  if (state.idx < 0) return;
+  infoEl.textContent =
+    '原图 ' + state.imgW + '×' + state.imgH +
+    ' | 窗口 ' + Math.round(state.W) + '×' + Math.round(state.H) +
+    ' | 输出 ' + state.outW + '×' + state.outH +
+    ' | 位置 ' + Math.round(state.x) + ',' + Math.round(state.y);
+}
+function updateProgress() {
+  if (!state.files.length) { progressEl.textContent = ''; return; }
+  const done = state.files.filter(f => f.done).length;
+  progressEl.textContent = '第 ' + (state.idx + 1) + ' / ' + state.files.length +
+    ' 张 · 已保存 ' + done + ' 张';
+}
+function updateThumbs() {
+  const items = thumbsEl.querySelectorAll('.thumb');
+  items.forEach((el, i) => {
+    el.classList.toggle('active', i === state.idx);
+    el.querySelector('.done').style.display = state.files[i].done ? '' : 'none';
+  });
+}
+
+/* ---------- 加载图片 ---------- */
+function goto(i) {
+  if (i < 0 || i >= state.files.length) return;
+  state.idx = i;
+  const f = state.files[i];
+  const token = ++state.loadToken;
+  const url = URL.createObjectURL(f.blob);
+  const img = document.createElement('img');
+  img.draggable = false;
+  img.alt = '';
+  img.onload = () => {
+    if (token !== state.loadToken) { URL.revokeObjectURL(url); return; }
+    // 释放上一张的解码内存
+    const old = layerWrap.firstChild;
+    if (old && old.parentNode === layerWrap) layerWrap.removeChild(old);
+    if (lastUrl) { URL.revokeObjectURL(lastUrl); lastUrl = null; }
+    lastUrl = url;
+    if (img.parentNode !== layerWrap) layerWrap.appendChild(img);
+    state.imgW = img.naturalWidth;
+    state.imgH = img.naturalHeight;
+    state.centered = !f.crop;
+    if (f.crop) { state.x = f.crop.x; state.y = f.crop.y; }
+    computeLayout();
+    render();
+    updateInfo();
+    saveBtn.disabled = false;
+    prevBtn.disabled = i === 0;
+    updateThumbs();
+    updateProgress();
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    if (token === state.loadToken) alert('无法加载图片: ' + f.name);
+  };
+  img.src = url;
+  updateThumbs();
+  updateProgress();
+}
+
+/* ---------- 选择文件夹 ---------- */
+function makeThumb(file) {
+  return new Promise(resolve => {
+    if (!('createImageBitmap' in window)) { resolve(null); return; }
+    createImageBitmap(file).then(bmp => {
+      try {
+        const c = document.createElement('canvas');
+        const max = 160;
+        const s = Math.min(1, max / Math.max(bmp.width, bmp.height));
+        c.width = Math.max(1, Math.round(bmp.width * s));
+        c.height = Math.max(1, Math.round(bmp.height * s));
+        c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+        bmp.close();
+        resolve(c.toDataURL('image/jpeg', 0.7));
+      } catch (e) { resolve(null); }
+    }, () => resolve(null));
+  });
+}
+
+fileInput.addEventListener('change', async () => {
+  const files = [...fileInput.files].filter(f =>
+    /^image\//.test(f.type) ||
+    /\.(png|jpe?g|webp|bmp|gif)$/i.test(f.name)
+  );
+  if (!files.length) { alert('未找到图片文件'); return; }
+  files.sort((a, b) => a.name.localeCompare(b.name, 'zh', { numeric: true }));
+
+  state.files = files.map(f => ({ name: f.name, blob: f, crop: null, done: false }));
+  state.idx = -1;
+  state.loadToken++;
+  if (lastUrl) { URL.revokeObjectURL(lastUrl); lastUrl = null; }
+  layerWrap.innerHTML = '';
+  frame.hidden = true;
+  emptyEl.hidden = false;
+  infoEl.hidden = true;
+  saveBtn.disabled = true;
+  prevBtn.disabled = true;
+
+  thumbPanel.hidden = false;
+  thumbsEl.innerHTML = '';
+  for (let i = 0; i < state.files.length; i++) {
+    const f = state.files[i];
+    const div = document.createElement('div');
+    div.className = 'thumb';
+    const img = document.createElement('img');
+    img.alt = '';
+    const idx = document.createElement('span');
+    idx.className = 'idx';
+    idx.textContent = i + 1;
+    const done = document.createElement('span');
+    done.className = 'done';
+    done.textContent = '✓';
+    done.style.display = 'none';
+    div.appendChild(img); div.appendChild(idx); div.appendChild(done);
+    div.addEventListener('click', () => goto(i));
+    thumbsEl.appendChild(div);
+    makeThumb(f.blob).then(dataUrl => { if (dataUrl) img.src = dataUrl; });
+  }
+  goto(0);
+});
+
+pickBtn.addEventListener('click', () => fileInput.click());
+
+/* ---------- 拖拽 ---------- */
+stage.addEventListener('pointerdown', e => {
+  if (state.idx < 0 || (e.button !== undefined && e.button !== 0)) return;
+  e.preventDefault();
+  stage.classList.add('dragging');
+  drag = { startX: state.x, startY: state.y, px: e.clientX, py: e.clientY };
+  stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = (e.clientX - drag.px) / state.k;
+  const dy = (e.clientY - drag.py) / state.k;
+  state.x = drag.startX - dx;
+  state.y = drag.startY - dy;
+  clamp();
+  applyTransform();
+  updateInfo();
+});
+function endDrag() {
+  if (!drag) return;
+  drag = null;
+  stage.classList.remove('dragging');
+  clamp();
+  applyTransform();
+  updateInfo();
+}
+stage.addEventListener('pointerup', endDrag);
+stage.addEventListener('pointercancel', endDrag);
+
+/* ---------- 保存并下一张 ---------- */
+function saveCurrent() {
+  const f = state.files[state.idx];
+  if (!f || !state.imgW) return;
+  const canvas = document.createElement('canvas');
+  canvas.width = state.outW;
+  canvas.height = state.outH;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(layerWrap.firstChild, state.x, state.y, state.W, state.H, 0, 0, state.outW, state.outH);
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const base = f.name.replace(/\.[^.]+$/, '');
+    a.href = url;
+    a.download = base + '.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    f.done = true;
+    updateThumbs();
+    updateProgress();
+    if (state.idx < state.files.length - 1) {
+      goto(state.idx + 1);
+    } else {
+      saveBtn.disabled = true;
+      alert('已保存全部 ' + state.files.length + ' 张图片！');
+    }
+  }, 'image/png');
+}
+saveBtn.addEventListener('click', saveCurrent);
+prevBtn.addEventListener('click', () => goto(state.idx - 1));
+
+/* ---------- 分辨率 / 工具 ---------- */
+function applyResolution() {
+  const w = parseInt(outWEl.value, 10);
+  const h = parseInt(outHEl.value, 10);
+  if (!w || !h || w <= 0 || h <= 0) { alert('请输入有效的裁剪分辨率'); return; }
+  state.outW = w;
+  state.outH = h;
+  state.files.forEach(f => f.crop = null); // 分辨率变化 → 重置各图位置
+  state.centered = true;
+  if (state.idx >= 0 && state.imgW) { computeLayout(); render(); updateInfo(); }
+}
+applyBtn.addEventListener('click', applyResolution);
+outWEl.addEventListener('change', applyResolution);
+outHEl.addEventListener('change', applyResolution);
+
+centerBtn.addEventListener('click', () => {
+  if (state.idx < 0 || !state.imgW) return;
+  state.centered = true;
+  state.x = (state.imgW - state.W) / 2;
+  state.y = (state.imgH - state.H) / 2;
+  clamp();
+  applyTransform();
+  updateInfo();
+});
+
+window.addEventListener('resize', () => { if (state.idx >= 0 && state.imgW) render(); });
+</script>
+</body>
+</html>
