@@ -1,13 +1,13 @@
 # 中旅旅行小程序 搜索→复制链接 自动化 Skill
 
-> 通过 WMPFDebugger CDP 通道(ws://127.0.0.1:62000)驱动「中旅旅行」小程序(wx56a6e0e5d7b06a52,后端 pro-api.ourtour.com)。
+> 通过 WMPFDebugger CDP 通道(ws://127.0.0.1:62000)驱动「中旅旅行」小程序(wxYYYYYYYYYY,后端 pro-api.ourtour.com)。
 > 适用:搜索商品 → 进详情 → 复制小程序链接 → 退回搜索页 的完整链路。
 
 ## 一、前置条件
 
-- WMPFDebugger 后端运行: `cd C:\Users\65164\WMPFDebugger; npx ts-node src/index.ts`
+- WMPFDebugger 后端运行: `cd C:\Users\userNumber\WMPFDebugger; npx ts-node src/index.ts`
 - 小程序已连接(日志出现 `[miniapp] miniapp client connected`)
-- 脚本目录: `C:\Users\65164\playwright-tools\`(Node ≥ 22,全局 WebSocket,无依赖)
+- 脚本目录: `C:\Users\userNumber\playwright-tools\`(Node ≥ 22,全局 WebSocket,无依赖)
 
 ## 二、核心逻辑(精简 5 步链路)
 
