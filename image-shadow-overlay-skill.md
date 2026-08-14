@@ -47,8 +47,8 @@ os.makedirs(OUT_DIR, exist_ok=True)
 def add_shadow(overlay, offset, blur, alpha, spread):
     """PS 投影: 黑色蒙版 -> 偏移 -> 高斯模糊 -> spread 扩展 -> 缩不透明度"""
     shadow = Image.new("RGBA", overlay.size, (0, 0, 0, 0))
-    black = Image.new("RGBA", overlay.size, SHADOW_COLOR + (255,))
-    black.paste(SHADOW_COLOR + (255,), (0, 0), overlay.getchannel("A"))
+    black = Image.new("RGBA", overlay.size, (0, 0, 0, 0))          # 全透明
+    black.paste((0, 0, 0, 255), (0, 0), overlay.getchannel("A"))   # 按 alpha 涂内容形状
     shadow.paste(black, offset, black)
     shadow = shadow.filter(ImageFilter.GaussianBlur(blur))
     a = shadow.getchannel("A")
