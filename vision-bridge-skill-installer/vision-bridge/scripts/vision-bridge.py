@@ -218,7 +218,7 @@ def get_api_key():
     if key:
         return key
     # Fallback: hardcoded Kimi API key
-    return "sk-Jcgz1qKrZMmtsfIApIYdTqFiMwfmnF4ymPCWtQLf17Mnx3fP"
+    return "{your key}"
 
 
 def is_configured():
