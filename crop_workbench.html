@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>批量裁剪工作台</title>
+</head>
+<body style="margin:0; font-family:'Microsoft YaHei',Arial,sans-serif; background:#17171a; color:#e6e6e6; display:flex; height:100vh; overflow:hidden;">
+  <div id="main" style="flex:1; display:flex; flex-direction:column; min-width:0;">
+    <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; background:#232327; border-bottom:1px solid #3a3a3f; flex-wrap:wrap;">
+      <button id="btnLoad" style="background:#3a6ea5; color:#fff; border:0; border-radius:4px; padding:6px 14px; cursor:pointer; font-size:13px;">加载文件夹</button>
+      <button id="btnExport" style="background:#2f9e44; color:#fff; border:0; border-radius:4px; padding:6px 14px; cursor:pointer; font-size:13px;">确认裁剪并导出</button>
+      <label style="font-size:13px; color:#bbb;">后缀</label>
+      <input id="suffix" type="text" value="_crop" style="width:80px; background:#17171a; color:#eee; border:1px solid #4a4a50; border-radius:4px; padding:5px 6px; font-size:13px;">
+      <label style="font-size:13px; color:#bbb; display:flex; align-items:center; gap:4px; cursor:pointer;"><input id="snap" type="checkbox" checked style="accent-color:#3a6ea5;">吸附</label>
+      <button id="btnClearGuides" style="background:#55555c; color:#fff; border:0; border-radius:4px; padding:6px 12px; cursor:pointer; font-size:13px;">清除参考线</button>
+      <button id="btnResetCrop" style="background:#55555c; color:#fff; border:0; border-radius:4px; padding:6px 12px; cursor:pointer; font-size:13px;">清除裁剪框</button>
+      <span id="status" style="font-size:12px; color:#9aa0a6; margin-left:auto; white-space:nowrap;"></span>
+    </div>
+    <div id="wrap" style="flex:1; position:relative; min-height:0;">
+      <canvas id="stage" style="display:block; width:100%; height:100%;"></canvas>
+    </div>
+    <div id="statbar" style="background:#232327; border-top:1px solid #3a3a3f; padding:4px 10px; font-size:12px; color:#8a8a90;"></div>
+  </div>
+  <div id="side" style="width:300px; display:flex; flex-direction:column; background:#202024; border-left:1px solid #3a3a3f; min-width:0; flex:none;">
+    <div style="padding:8px 10px; font-size:13px; color:#ccc; border-bottom:1px solid #3a3a3f;">裁剪预览(定格在框内)</div>
+    <div id="previewBox" style="height:200px; background:#141417; border-bottom:1px solid #3a3a3f; position:relative; flex:none;">
+      <canvas id="preview" style="display:block; width:100%; height:100%;"></canvas>
+    </div>
+    <div style="padding:8px 10px; font-size:13px; color:#ccc; border-bottom:1px solid #3a3a3f;">图片列表(点击选择,实时显示裁剪框)</div>
+    <div id="thumbs" style="flex:1; overflow:auto; padding:8px; display:flex; flex-wrap:wrap; gap:8px; align-content:flex-start;"></div>
+  </div>
+  <input type="file" id="fallback" webkitdirectory multiple accept="image/*" style="display:none;">
+<script>
+(function(){
+'use strict';
+var el = {
+  wrap: document.getElementById('wrap'),
+  stage: document.getElementById('stage'),
+  status: document.getElementById('status'),
+  statbar: document.getElementById('statbar'),
+  suffix: document.getElementById('suffix'),
+  snapChk: document.getElementById('snap'),
+  btnLoad: document.getElementById('btnLoad'),
+  btnExport: document.getElementById('btnExport'),
+  btnClearGuides: document.getElementById('btnClearGuides'),
+  btnResetCrop: document.getElementById('btnResetCrop'),
+  preview: document.getElementById('preview'),
+  thumbs: document.getElementById('thumbs'),
+  fallback: document.getElementById('fallback')
+};
+var S = {
+  images: [],   // {name, img, w, h}
+  selected: 0,
+  crop: null,   // {x,y,w,h} 比例(0~1)
+  guides: [],   // {axis:'h'|'v', pos:比例}
+  snap: true,
+  mode: 'none',
+  drag: null,
+  snapLines: []
+};
+var R = 22; // 标尺区宽度
+var PAD = 30; // 图片四周留白(与画布边缘的最小间距)
+
+function curImg(){ return S.images[S.selected] || null; }
+function clamp(v, lo, hi){ if(lo===undefined){lo=0;hi=1;} return Math.min(hi, Math.max(lo, v)); }
+function imgRect(cw, ch, iw, ih){
+  var availW = cw - R - PAD*2, availH = ch - R - PAD*2;
+  var s = Math.min(availW/iw, availH/ih);
+  var w = iw*s, h = ih*s;
+  return { x: R+PAD+(availW-w)/2, y: R+PAD+(availH-h)/2, w: w, h: h };
+}
+function cropPx(rect){
+  return { x: rect.x+S.crop.x*rect.w, y: rect.y+S.crop.y*rect.h, w: S.crop.w*rect.w, h: S.crop.h*rect.h };
+}
+function targets(isX){
+  var t = [0, 0.5, 1, 1/3, 2/3];
+  for(var i=0;i<S.guides.length;i++){
+    var g = S.guides[i];
+    if((isX && g.axis==='v') || (!isX && g.axis==='h')) t.push(g.pos);
+  }
+  return t;
+}
+function nearestTV(t, v, thr){
+  var best=null;
+  for(var i=0;i<t.length;i++){
+    var d=Math.abs(t[i]-v);
+    if(d<=thr && (best===null || d<best.d)) best={v:t[i], d:d};
+  }
+  return best;
+}
+function snapMove(x, w, isX, thr, axis){
+  var t = targets(isX);
+  var s1 = nearestTV(t, x, thr), s2 = nearestTV(t, x+w, thr);
+  if(s1!==null && (s2===null || s1.d<=s2.d)){ S.snapLines.push({axis:axis,pos:s1.v}); return s1.v; }
+  if(s2!==null){ S.snapLines.push({axis:axis,pos:s2.v}); return s2.v-w; }
+  return x;
+}
+function snapOne(v, isX, thr, axis){
+  var r = nearestTV(targets(isX), v, thr);
+  if(r!==null){ S.snapLines.push({axis:axis,pos:r.v}); return r.v; }
+  return v;
+}
+
+// ---------- 图片加载 ----------
+function addImage(fileOrUrl, name){
+  return new Promise(function(resolve){
+    var url = (typeof fileOrUrl==='string') ? fileOrUrl : URL.createObjectURL(fileOrUrl);
+    var im = new Image();
+    im.onload = function(){ S.images.push({name:name||('img'+S.images.length), img:im, w:im.naturalWidth, h:im.naturalHeight}); resolve(); };
+    im.onerror = function(){ resolve(); };
+    im.src = url;
+  });
+}
+function isImgName(n){ return /\.(png|jpe?g|webp|gif|bmp)$/i.test(n); }
+function loadFolder(){
+  if(window.showDirectoryPicker){
+    window.showDirectoryPicker({mode:'read'}).then(function(dir){
+      var files=[];
+      (async function(){
+        for await (var ent of dir.values()){
+          if(ent.kind==='file' && isImgName(ent.name)) files.push(await ent.getFile());
+        }
+        files.sort(function(a,b){ return a.name.localeCompare(b.name,'zh'); });
+        if(!files.length){ toast('文件夹里没有图片'); return; }
+        loadFiles(files);
+      })().catch(function(){});
+    }).catch(function(){ /* 用户取消 */ });
+    return;
+  }
+  el.fallback.click();
+}
+function loadFiles(list){
+  S.images=[]; el.thumbs.innerHTML='';
+  (async function(){
+    for(var i=0;i<list.length;i++){ await addImage(list[i], list[i].name); }
+    finishLoad();
+  })();
+}
+function finishLoad(){
+  S.selected=0; S.crop=null; S.guides=[];
+  rebuildThumbs(); updateStatus(); draw(); drawPreview(); drawThumbs();
+  toast('已加载 '+S.images.length+' 张图片');
+}
+el.fallback.addEventListener('change', function(){
+  var files = Array.prototype.slice.call(el.fallback.files||[]).filter(function(f){return isImgName(f.name);});
+  files.sort(function(a,b){ return a.name.localeCompare(b.name,'zh'); });
+  if(files.length) loadFiles(files);
+});
+
+// ---------- 主画布 ----------
+function draw(){
+  var c = el.stage, ctx = c.getContext('2d');
+  var cw = el.wrap.clientWidth, ch = el.wrap.clientHeight;
+  var dpr = window.devicePixelRatio||1;
+  c.width = Math.max(1, Math.round(cw*dpr));
+  c.height = Math.max(1, Math.round(ch*dpr));
+  c.style.width = cw+'px'; c.style.height = ch+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle = '#17171a'; ctx.fillRect(0,0,cw,ch);
+  var img = curImg();
+  var rect = img ? imgRect(cw,ch,img.w,img.h) : null;
+  if(img && rect){
+    ctx.drawImage(img.img, rect.x, rect.y, rect.w, rect.h);
+    drawCrop(ctx, cw, ch, rect, img);
+    drawGuides(ctx, cw, ch, rect);
+  } else {
+    ctx.fillStyle='#888'; ctx.font='15px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('点击"加载文件夹"选择图片目录', cw/2, ch/2);
+    ctx.textAlign='left';
+  }
+  drawRulers(ctx, cw, ch, rect);
+  drawGuideLabel(ctx, cw, ch, rect);
+}
+function drawCrop(ctx, cw, ch, rect, img){
+  if(!S.crop || S.crop.w<=0 || S.crop.h<=0) return;
+  var cr = cropPx(rect);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0,0,cw,cr.y);
+  ctx.fillRect(0,cr.y,cr.x,cr.h);
+  ctx.fillRect(cr.x+cr.w,cr.y,cw-(cr.x+cr.w),cr.h);
+  ctx.fillRect(0,cr.y+cr.h,cw,ch-(cr.y+cr.h));
+  ctx.strokeStyle='#4da3ff'; ctx.lineWidth=1.5;
+  ctx.strokeRect(cr.x+0.5, cr.y+0.5, cr.w-1, cr.h-1);
+  var pxw=Math.round(S.crop.w*img.w), pxh=Math.round(S.crop.h*img.h);
+  var ly = cr.y-R > 6 ? cr.y-16 : cr.y+cr.h+6;
+  ctx.fillStyle='rgba(0,0,0,0.7)';
+  ctx.fillRect(cr.x, ly, Math.min(86, cr.w), 14);
+  ctx.fillStyle='#fff'; ctx.font='10px sans-serif';
+  ctx.fillText(pxw+' x '+pxh, cr.x+3, ly+10);
+  var hs=7, hh=hs/2;
+  ctx.fillStyle='#fff';
+  var pts=[[cr.x,cr.y],[cr.x+cr.w/2,cr.y],[cr.x+cr.w,cr.y],
+           [cr.x,cr.y+cr.h/2],[cr.x+cr.w,cr.y+cr.h/2],
+           [cr.x,cr.y+cr.h],[cr.x+cr.w/2,cr.y+cr.h],[cr.x+cr.w,cr.y+cr.h]];
+  for(var i=0;i<pts.length;i++){ ctx.fillRect(pts[i][0]-hh, pts[i][1]-hh, hs, hs); }
+  for(var j=0;j<S.snapLines.length;j++){
+    var sl=S.snapLines[j];
+    ctx.strokeStyle='rgba(255,70,90,0.9)'; ctx.lineWidth=1;
+    if(sl.axis==='v'){ var x=rect.x+sl.pos*rect.w; ctx.beginPath(); ctx.moveTo(x,R); ctx.lineTo(x,ch); ctx.stroke(); }
+    else { var y=rect.y+sl.pos*rect.h; ctx.beginPath(); ctx.moveTo(R,y); ctx.lineTo(cw,y); ctx.stroke(); }
+  }
+}
+function drawGuides(ctx, cw, ch, rect){
+  if(!rect) return;
+  ctx.strokeStyle='#33e0ff'; ctx.lineWidth=1;
+  for(var i=0;i<S.guides.length;i++){
+    var g=S.guides[i];
+    if(g.axis==='v'){ var x=rect.x+g.pos*rect.w; ctx.beginPath(); ctx.moveTo(x,R); ctx.lineTo(x,ch); ctx.stroke(); }
+    else { var y=rect.y+g.pos*rect.h; ctx.beginPath(); ctx.moveTo(R,y); ctx.lineTo(cw,y); ctx.stroke(); }
+  }
+}
+function drawRulers(ctx, cw, ch, rect){
+  ctx.fillStyle='#232327'; ctx.fillRect(0,0,cw,R); ctx.fillRect(0,0,R,ch);
+  ctx.strokeStyle='#3a3a3f';
+  ctx.beginPath(); ctx.moveTo(R,0.5); ctx.lineTo(R,ch); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0.5,R); ctx.lineTo(cw,R); ctx.stroke();
+  ctx.strokeStyle='#55555c'; ctx.fillStyle='#9a9aa0'; ctx.font='9px sans-serif';
+  if(rect){
+    var iw=curImg().w, ih=curImg().h;
+    for(var x=R; x<=R+rect.w; x+=50){
+      ctx.beginPath(); ctx.moveTo(x+0.5,R-5); ctx.lineTo(x+0.5,R); ctx.stroke();
+    }
+    for(var x2=R; x2<=R+rect.w; x2+=100){
+      ctx.fillText(String(Math.round((x2-R)/rect.w*iw)), x2+2, 10);
+    }
+    for(var y=R; y<=R+rect.h; y+=50){
+      ctx.beginPath(); ctx.moveTo(R-5,y+0.5); ctx.lineTo(R,y+0.5); ctx.stroke();
+    }
+    for(var y2=R; y2<=R+rect.h; y2+=100){
+      ctx.fillText(String(Math.round((y2-R)/rect.h*ih)), 3, y2+8);
+    }
+  }
+}
+function drawGuideLabel(ctx, cw, ch, rect){
+  var g = null;
+  if(S.mode==='newGuideH' || S.mode==='newGuideV') g = S.guides[S.guides.length-1];
+  else if(S.mode==='moveGuide') g = S.drag.g.g;
+  if(!g || !rect) return;
+  var img = curImg(); if(!img) return;
+  ctx.font = '10px sans-serif';
+  if(g.axis==='v'){
+    var left = Math.round(g.pos*img.w), right = img.w - left;
+    var text = left+'px <-- | --> '+right+'px';
+    var tw = ctx.measureText(text).width + 12;
+    var gx = rect.x + g.pos*rect.w;
+    var tx = Math.min(Math.max(R+4, gx+6), cw-tw-4);
+    ctx.fillStyle='rgba(0,0,0,0.78)';
+    ctx.fillRect(tx, R+4, tw, 16);
+    ctx.strokeStyle='#33e0ff'; ctx.lineWidth=1;
+    ctx.strokeRect(tx+0.5, R+4.5, tw-1, 15);
+    ctx.fillStyle='#fff';
+    ctx.fillText(text, tx+6, R+16);
+  } else {
+    var top = Math.round(g.pos*img.h), bottom = img.h - top;
+    var text2 = top+'px <-- | --> '+bottom+'px';
+    var tw2 = ctx.measureText(text2).width + 12;
+    var gy = rect.y + g.pos*rect.h;
+    var ty = Math.min(Math.max(R+4, gy+6), ch-20);
+    ctx.fillStyle='rgba(0,0,0,0.78)';
+    ctx.fillRect(R+4, ty, tw2, 16);
+    ctx.strokeStyle='#33e0ff'; ctx.lineWidth=1;
+    ctx.strokeRect(R+4.5, ty+0.5, tw2-1, 15);
+    ctx.fillStyle='#fff';
+    ctx.fillText(text2, R+10, ty+12);
+  }
+}
+
+// ---------- 交互 ----------
+function mousePos(e){
+  var r = el.stage.getBoundingClientRect();
+  return { mx:e.clientX-r.left, my:e.clientY-r.top };
+}
+function toFrac(mx,my,rect){ return { fx:(mx-rect.x)/rect.w, fy:(my-rect.y)/rect.h }; }
+function hitGuide(mx,my,rect){
+  for(var i=S.guides.length-1;i>=0;i--){
+    var g=S.guides[i];
+    var px = g.axis==='v' ? rect.x+g.pos*rect.w : rect.y+g.pos*rect.h;
+    var d = g.axis==='v' ? Math.abs(mx-px) : Math.abs(my-px);
+    if(d<=6) return {i:i, g:g};
+  }
+  return null;
+}
+function hitHandle(mx,my,cr){
+  var hh=7;
+  var pts={nw:[cr.x,cr.y],n:[cr.x+cr.w/2,cr.y],ne:[cr.x+cr.w,cr.y],e:[cr.x+cr.w,cr.y+cr.h/2],
+           se:[cr.x+cr.w,cr.y+cr.h],s:[cr.x+cr.w/2,cr.y+cr.h],sw:[cr.x,cr.y+cr.h],w:[cr.x,cr.y+cr.h/2]};
+  for(var k in pts){ if(Math.abs(mx-pts[k][0])<=hh && Math.abs(my-pts[k][1])<=hh) return k; }
+  return null;
+}
+function insideCrop(mx,my,cr,pad){
+  return mx>=cr.x+pad && mx<=cr.x+cr.w-pad && my>=cr.y+pad && my<=cr.y+cr.h-pad;
+}
+function hoverCursor(mx,my,rect){
+  if(my<R || mx<R) return 'crosshair';
+  if(hitGuide(mx,my,rect)) return 'move';
+  if(S.crop){
+    var cr=cropPx(rect);
+    var h=hitHandle(mx,my,cr);
+    if(h){ var map={nw:'nwse-resize',se:'nwse-resize',ne:'nesw-resize',sw:'nesw-resize',n:'ns-resize',s:'ns-resize',e:'ew-resize',w:'ew-resize'}; return map[h]; }
+    if(insideCrop(mx,my,cr,7)) return 'move';
+  }
+  return 'default';
+}
+function onDown(e){
+  var img=curImg(); if(!img) return;
+  var rect=imgRect(el.wrap.clientWidth, el.wrap.clientHeight, img.w, img.h);
+  var p=mousePos(e), f=toFrac(p.mx,p.my,rect);
+  e.preventDefault();
+  var g=hitGuide(p.mx,p.my,rect);
+  if(g){ S.mode='moveGuide'; S.drag={g:g}; }
+  else if(p.my<R){ S.mode='newGuideH'; S.guides.push({axis:'h',pos:clamp(f.fy)}); S.drag={axis:'h'}; draw(); }
+  else if(p.mx<R){ S.mode='newGuideV'; S.guides.push({axis:'v',pos:clamp(f.fx)}); S.drag={axis:'v'}; draw(); }
+  else if(S.crop){
+    var cr=cropPx(rect);
+    var h=hitHandle(p.mx,p.my,cr);
+    if(h){ S.mode='resize'; S.drag={handle:h, start:{fx:f.fx,fy:f.fy}, box:{x:S.crop.x,y:S.crop.y,w:S.crop.w,h:S.crop.h}}; }
+    else if(insideCrop(p.mx,p.my,cr,7)){ S.mode='moveCrop'; S.drag={start:{fx:f.fx,fy:f.fy}, box:{x:S.crop.x,y:S.crop.y,w:S.crop.w,h:S.crop.h}}; }
+    else { S.mode='newCrop'; S.drag={start:{fx:f.fx,fy:f.fy}, old:{x:S.crop.x,y:S.crop.y,w:S.crop.w,h:S.crop.h}}; S.crop={x:f.fx,y:f.fy,w:0,h:0}; draw(); }
+  } else {
+    S.mode='newCrop'; S.drag={start:{fx:f.fx,fy:f.fy}, old:null}; S.crop={x:f.fx,y:f.fy,w:0,h:0}; draw();
+  }
+}
+function onMove(e){
+  var img=curImg(); if(!img) return;
+  var cw=el.wrap.clientWidth, ch=el.wrap.clientHeight;
+  var rect=imgRect(cw,ch,img.w,img.h);
+  var p=mousePos(e), f=toFrac(p.mx,p.my,rect);
+  S.snapLines=[];
+  if(S.mode==='none'){ el.stage.style.cursor=hoverCursor(p.mx,p.my,rect); return; }
+  var thrX=6/rect.w, thrY=6/rect.h;
+  var i;
+  switch(S.mode){
+    case 'newGuideH': S.guides[S.guides.length-1].pos=clamp(f.fy); draw(); break;
+    case 'newGuideV': S.guides[S.guides.length-1].pos=clamp(f.fx); draw(); break;
+    case 'moveGuide': S.drag.g.g.pos=clamp(S.drag.g.g.axis==='h'?f.fy:f.fx); draw(); break;
+    case 'moveCrop': {
+      var box=S.drag.box;
+      var nx=box.x+(f.fx-S.drag.start.fx), ny=box.y+(f.fy-S.drag.start.fy);
+      if(S.snap){ nx=snapMove(nx,box.w,true,thrX,'v'); ny=snapMove(ny,box.h,false,thrY,'h'); }
+      S.crop.x=clamp(nx,0,1-box.w); S.crop.y=clamp(ny,0,1-box.h);
+      draw(); break;
+    }
+    case 'resize': {
+      var b=S.drag.box, hd=S.drag.handle;
+      var x0=b.x, y0=b.y, x1=b.x+b.w, y1=b.y+b.h;
+      var dx=f.fx-S.drag.start.fx, dy=f.fy-S.drag.start.fy;
+      if(hd.indexOf('w')>=0) x0=b.x+dx;
+      if(hd.indexOf('e')>=0) x1=b.x+b.w+dx;
+      if(hd.indexOf('n')>=0) y0=b.y+dy;
+      if(hd.indexOf('s')>=0) y1=b.y+b.h+dy;
+      if(S.snap){
+        if(hd.indexOf('w')>=0) x0=snapOne(x0,true,thrX,'v');
+        if(hd.indexOf('e')>=0) x1=snapOne(x1,true,thrX,'v');
+        if(hd.indexOf('n')>=0) y0=snapOne(y0,false,thrY,'h');
+        if(hd.indexOf('s')>=0) y1=snapOne(y1,false,thrY,'h');
+      }
+      if(x0>x1){ var tx=x0; x0=x1; x1=tx; }
+      if(y0>y1){ var ty=y0; y0=y1; y1=ty; }
+      x0=clamp(x0); y0=clamp(y0); x1=clamp(x1); y1=clamp(y1);
+      if(x1-x0<0.002) x1=Math.min(1,x0+0.002);
+      if(y1-y0<0.002) y1=Math.min(1,y0+0.002);
+      S.crop={x:x0,y:y0,w:x1-x0,h:y1-y0};
+      draw(); break;
+    }
+    case 'newCrop': {
+      var st=S.drag.start;
+      var x0=Math.min(st.fx,f.fx), y0=Math.min(st.fy,f.fy), x1=Math.max(st.fx,f.fx), y1=Math.max(st.fy,f.fy);
+      if(S.snap){ x0=snapOne(x0,true,thrX,'v'); x1=snapOne(x1,true,thrX,'v'); y0=snapOne(y0,false,thrY,'h'); y1=snapOne(y1,false,thrY,'h'); }
+      S.crop={x:clamp(x0), y:clamp(y0), w:clamp(x1-x0,0,1), h:clamp(y1-y0,0,1)};
+      draw(); break;
+    }
+  }
+  drawPreview(); drawThumbsDebounced();
+}
+function onUp(){
+  if(S.mode==='newCrop' && S.crop && (S.crop.w<0.004 || S.crop.h<0.004)){
+    S.crop = S.drag.old || null;
+  }
+  S.mode='none'; S.drag=null; S.snapLines=[];
+  draw(); drawPreview(); drawThumbsDebounced(); updateStatus();
+}
+function onDbl(e){
+  var img=curImg(); if(!img) return;
+  var rect=imgRect(el.wrap.clientWidth, el.wrap.clientHeight, img.w, img.h);
+  var p=mousePos(e);
+  var g=hitGuide(p.mx,p.my,rect);
+  if(g){ S.guides.splice(g.i,1); draw(); updateStatus(); return; }
+  if(S.crop){
+    var cr=cropPx(rect);
+    if(p.mx>=cr.x && p.mx<=cr.x+cr.w && p.my>=cr.y && p.my<=cr.y+cr.h){ S.crop=null; draw(); drawPreview(); drawThumbs(); updateStatus(); }
+  }
+}
+el.stage.addEventListener('mousedown', onDown);
+window.addEventListener('mousemove', onMove);
+window.addEventListener('mouseup', onUp);
+window.addEventListener('dblclick', onDbl);
+window.addEventListener('resize', function(){ draw(); drawPreview(); drawThumbs(); });
+
+// ---------- 右侧预览 & 缩略图 ----------
+function drawPreview(){
+  var img=curImg(), c=el.preview, ctx=c.getContext('2d');
+  var pw=c.clientWidth||300, ph=c.clientHeight||200;
+  var dpr=window.devicePixelRatio||1;
+  c.width=pw*dpr; c.height=ph*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle='#141417'; ctx.fillRect(0,0,pw,ph);
+  if(!img){ ctx.fillStyle='#777'; ctx.font='12px sans-serif'; ctx.textAlign='center'; ctx.fillText('未加载图片',pw/2,ph/2); ctx.textAlign='left'; return; }
+  var hasCrop = S.crop && S.crop.w>0 && S.crop.h>0;
+  var cw2 = (hasCrop?S.crop.w:1)*img.w, ch2 = (hasCrop?S.crop.h:1)*img.h;
+  var s = Math.min(pw/cw2, ph/ch2)*0.96;
+  var dw=cw2*s, dh=ch2*s, dx=(pw-dw)/2, dy=(ph-dh)/2;
+  var sx = hasCrop?S.crop.x*img.w:0, sy = hasCrop?S.crop.y*img.h:0;
+  ctx.drawImage(img.img, sx,sy,cw2,ch2, dx,dy,dw,dh);
+  ctx.strokeStyle='#4da3ff'; ctx.lineWidth=1.5;
+  ctx.strokeRect(dx+0.5,dy+0.5,dw-1,dh-1);
+  if(hasCrop){
+    ctx.fillStyle='rgba(0,0,0,0.65)';
+    ctx.fillRect(dx, Math.max(0,dy-18), 90, 14);
+    ctx.fillStyle='#fff'; ctx.font='10px sans-serif';
+    ctx.fillText('裁剪 '+Math.round(cw2)+'x'+Math.round(ch2), dx+3, Math.max(11,dy-7));
+  }
+}
+var thumbEls=[], thumbTimer=0;
+function rebuildThumbs(){
+  el.thumbs.innerHTML=''; thumbEls=[];
+  S.images.forEach(function(im,i){
+    var box=document.createElement('div');
+    box.style.cssText='width:120px; cursor:pointer; border:2px solid '+(i===S.selected?'#4da3ff':'#333337')+'; border-radius:4px; overflow:hidden; background:#17171a; flex:none;';
+    box.onclick=function(){ S.selected=i; rebuildThumbs(); draw(); drawPreview(); updateStatus(); };
+    var cv=document.createElement('canvas');
+    cv.width=120; cv.height=120; cv.style.cssText='display:block; width:120px; height:120px;';
+    box.appendChild(cv);
+    var lab=document.createElement('div');
+    lab.style.cssText='font-size:10px; color:#aaa; text-align:center; padding:2px 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;';
+    lab.textContent=im.name;
+    box.appendChild(lab);
+    el.thumbs.appendChild(box);
+    thumbEls.push({cv:cv, im:im});
+  });
+  drawThumbs();
+}
+function drawThumbs(){
+  for(var i=0;i<thumbEls.length;i++){
+    var t=thumbEls[i], ctx=t.cv.getContext('2d');
+    ctx.clearRect(0,0,120,120);
+    var iw=t.im.w, ih=t.im.h;
+    var s=Math.min(116/iw,116/ih);
+    var w=iw*s, h=ih*s, x=(120-w)/2, y=(120-h)/2;
+    ctx.drawImage(t.im.img, x,y,w,h);
+    if(S.crop && S.crop.w>0 && S.crop.h>0){
+      var cx=x+S.crop.x*w, cy=y+S.crop.y*h, cw2=S.crop.w*w, ch2=S.crop.h*h;
+      ctx.fillStyle='rgba(0,0,0,0.55)';
+      ctx.fillRect(0,0,120,cy);
+      ctx.fillRect(0,cy,cx,ch2);
+      ctx.fillRect(cx+cw2,cy,120-(cx+cw2),ch2);
+      ctx.fillRect(0,cy+ch2,120,120-(cy+ch2));
+      ctx.strokeStyle='rgba(77,163,255,0.9)'; ctx.lineWidth=1;
+      ctx.strokeRect(cx+0.5,cy+0.5,cw2-1,ch2-1);
+    }
+  }
+}
+function drawThumbsDebounced(){ clearTimeout(thumbTimer); thumbTimer=setTimeout(drawThumbs,60); }
+
+// ---------- 状态 & 导出 ----------
+function updateStatus(){
+  var img=curImg(), t='';
+  if(img){
+    t='当前 '+img.name+'  '+img.w+'×'+img.h;
+    if(S.crop && S.crop.w>0 && S.crop.h>0){
+      t+='  |  裁剪 '+Math.round(S.crop.w*img.w)+'×'+Math.round(S.crop.h*img.h)+'px';
+      t+='  (x'+Math.round(S.crop.x*img.w)+',y'+Math.round(S.crop.y*img.h)+')';
+    }
+    t+='  |  参考线 '+S.guides.length+'  |  吸附 '+(S.snap?'开':'关');
+    el.statbar.textContent='共 '+S.images.length+' 张 · 拖动上/左标尺创建参考线 · 拖拽参考线可移动,双击删除 · 图片上拖动创建裁剪框,8个手柄缩放,双击裁剪框删除';
+  } else {
+    el.statbar.textContent='';
+  }
+  el.status.textContent = img ? t : '未加载文件夹';
+}
+var toastEl=null;
+function toast(msg){
+  if(!toastEl){
+    toastEl=document.createElement('div');
+    toastEl.style.cssText='position:fixed; right:16px; bottom:16px; background:#2f2f35; color:#eee; padding:8px 14px; border-radius:6px; font-size:13px; box-shadow:0 2px 10px rgba(0,0,0,.4); z-index:999; transition:opacity .4s;';
+    document.body.appendChild(toastEl);
+  }
+  toastEl.textContent=msg; toastEl.style.opacity='1';
+  clearTimeout(toastEl._t);
+  toastEl._t=setTimeout(function(){ toastEl.style.opacity='0'; }, 2200);
+}
+function cropBlob(im){
+  return new Promise(function(res){
+    var x=Math.max(0,Math.min(im.w-1,Math.round(S.crop.x*im.w)));
+    var y=Math.max(0,Math.min(im.h-1,Math.round(S.crop.y*im.h)));
+    var w=Math.max(1,Math.min(im.w-x,Math.round(S.crop.w*im.w)));
+    var h=Math.max(1,Math.min(im.h-y,Math.round(S.crop.h*im.h)));
+    var c=document.createElement('canvas'); c.width=w; c.height=h;
+    var ctx=c.getContext('2d');
+    ctx.drawImage(im.img, x,y,w,h, 0,0,w,h);
+    c.toBlob(function(b){ res(b); }, 'image/png');
+  });
+}
+function doExport(){
+  if(!S.images.length){ toast('请先加载文件夹'); return; }
+  if(!S.crop || S.crop.w<=0 || S.crop.h<=0){ toast('请先在图上创建裁剪框'); return; }
+  var suffix=el.suffix.value||'';
+  var useDir = !!window.showDirectoryPicker;
+  (useDir ? window.showDirectoryPicker({mode:'readwrite'}) : Promise.resolve(null)).then(function(dir){
+    return (async function(){
+      var done=0;
+      for(var i=0;i<S.images.length;i++){
+        var im=S.images[i];
+        var blob=await cropBlob(im);
+        var stem=im.name.replace(/\.[^.]+$/,'');
+        var fname=stem+suffix+'.png';
+        if(dir){
+          try{
+            var fh=await dir.getFileHandle(fname,{create:true});
+            var w=await fh.createWritable();
+            await w.write(blob); await w.close();
+          }catch(err){ toast('写入失败: '+fname); }
+        } else {
+          var a=document.createElement('a');
+          a.href=URL.createObjectURL(blob); a.download=fname;
+          document.body.appendChild(a); a.click(); a.remove();
+        }
+        done++;
+        el.status.textContent='导出中 '+done+'/'+S.images.length;
+        await new Promise(function(r){ setTimeout(r,20); });
+      }
+      toast('完成:已导出 '+done+' 张(后缀 "'+suffix+'" )');
+      updateStatus(); draw();
+    })();
+  }).catch(function(){ /* 取消选择导出目录 */ });
+}
+el.btnLoad.onclick=loadFolder;
+el.btnExport.onclick=doExport;
+el.btnClearGuides.onclick=function(){ S.guides=[]; draw(); updateStatus(); };
+el.btnResetCrop.onclick=function(){ S.crop=null; draw(); drawPreview(); drawThumbs(); updateStatus(); };
+el.snapChk.addEventListener('change',function(){ S.snap=el.snapChk.checked; updateStatus(); });
+
+draw();
+window.app={ addImage:addImage, finishLoad:finishLoad, S:S, draw:draw, drawPreview:drawPreview, drawThumbs:drawThumbs };
+})();
+</script>
+</body>
+</html>
