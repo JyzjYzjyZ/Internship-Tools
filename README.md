@@ -6,4 +6,4 @@ This repository hosts various tools I built during my internship to streamline d
 - slice_by_alpha.py 文件将figma导出的图片按照alpha裁剪。用于方便的导出一整个组
 - image-shadow-overlay-skill.md 批量为图片创建阴影随后叠加在另一个图片上
 - 没有提及的功能价值相对没有那么高，忽略即可
-- crop_workbench.html 一套裁剪所有图片共用 批量裁剪文件夹图片
+- 图片批量裁剪工具.html 一套裁剪所有图片共用 批量裁剪文件夹图片
