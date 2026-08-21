@@ -3,6 +3,8 @@ This repository hosts various tools I built during my internship to streamline d
 
 - **vision-bridge-skill-installer/vision-bridge** 对于安装了Claude code assistant for vscode插件，使用vscode作为claude code cli前端页面。可以在对话框黏贴图片，然后使用kimi作为deepseek的眼睛
 - **中旅旅行搜索复制链接-skill.md** 中旅编号转换是将旅游产品的编号在小程序里面自动转成小程序链接。工作需求是这样的，遂尝试
+  | 3300501086 | #小程序://中旅旅行/F49KbQSlGyMcSii |
+  |---|---|
 - **travel-product-naming** 批量命名文旅/疗休养产品，统一格式为「编号 目的地 · 主题1,主题2-交通方式N日」，支持多种编号、排序与子分区，（AI概括局限需人工验收）
   | 原文件名 | 新命名 |
   |---|---|
