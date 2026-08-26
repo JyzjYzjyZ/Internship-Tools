@@ -1,0 +1,1520 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎯 元素定位器 · 移动 & 保存</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #f0f2f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .toolbar {
+            background: #fff;
+            padding: 6px 14px;
+            border-bottom: 1px solid #d0d7de;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+            min-height: 44px;
+        }
+        .toolbar button {
+            padding: 4px 12px;
+            border: 1px solid #d0d7de;
+            border-radius: 4px;
+            background: #f6f8fa;
+            cursor: pointer;
+            font-size: 12px;
+            transition: 0.2s;
+            white-space: nowrap;
+        }
+        .toolbar button:hover {
+            background: #eaeef2;
+        }
+        .toolbar button.primary {
+            background: #1f883d;
+            color: #fff;
+            border-color: #1f883d;
+        }
+        .toolbar button.primary:hover {
+            background: #1a7a34;
+        }
+        .toolbar button.danger {
+            background: #cf222e;
+            color: #fff;
+            border-color: #cf222e;
+        }
+        .toolbar button.danger:hover {
+            background: #b11f2b;
+        }
+        .toolbar button.undo-btn {
+            background: #0969da;
+            color: #fff;
+            border-color: #0969da;
+        }
+        .toolbar button.undo-btn:hover {
+            background: #0550ae;
+        }
+        .toolbar button.move-btn {
+            background: #8250df;
+            color: #fff;
+            border-color: #8250df;
+        }
+        .toolbar button.move-btn:hover {
+            background: #6a3bb5;
+        }
+        .toolbar button.move-btn.active {
+            background: #ddf4ff;
+            color: #0550ae;
+            border-color: #0969da;
+        }
+        .toolbar .file-count {
+            font-size: 13px;
+            color: #57606a;
+            margin-left: auto;
+        }
+        .toolbar .hint {
+            font-size: 12px;
+            color: #8b949e;
+            background: #f6f8fa;
+            padding: 2px 10px;
+            border-radius: 12px;
+        }
+        .toolbar .step-group {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: #24292f;
+            background: #f6f8fa;
+            padding: 2px 8px;
+            border-radius: 12px;
+            border: 1px solid #d0d7de;
+        }
+        .toolbar .step-group input {
+            width: 40px;
+            padding: 2px 4px;
+            border: 1px solid #d0d7de;
+            border-radius: 3px;
+            font-size: 12px;
+            text-align: center;
+        }
+        #fileInput {
+            display: none;
+        }
+
+        /* 选中元素信息栏 (取代原图例) */
+        .info-bar {
+            background: #fff;
+            padding: 4px 16px;
+            border-bottom: 1px solid #d0d7de;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+            min-height: 38px;
+            font-size: 12px;
+        }
+        .info-bar .label {
+            font-weight: 600;
+            color: #24292f;
+        }
+        .info-bar .info-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #f6f8fa;
+            border: 1px solid #d0d7de;
+            border-radius: 12px;
+            padding: 2px 10px;
+            font-size: 12px;
+            color: #24292f;
+        }
+        .info-bar .info-item .val {
+            font-weight: 600;
+            color: #0550ae;
+            font-family: 'Fira Code', monospace;
+        }
+        .info-bar .empty-msg {
+            color: #8b949e;
+            font-size: 12px;
+        }
+        .info-bar .coord-edit {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+        }
+        .info-bar .coord-edit input {
+            width: 48px;
+            padding: 1px 4px;
+            border: 1px solid #d0d7de;
+            border-radius: 3px;
+            font-size: 11px;
+            text-align: center;
+            font-family: 'Fira Code', monospace;
+        }
+        .info-bar .coord-edit input:focus {
+            outline: 1px solid #0969da;
+            border-color: #0969da;
+        }
+        .info-bar .coord-edit button {
+            padding: 1px 6px;
+            font-size: 11px;
+            border: 1px solid #d0d7de;
+            border-radius: 3px;
+            background: #f6f8fa;
+            cursor: pointer;
+        }
+        .info-bar .coord-edit button:hover {
+            background: #eaeef2;
+        }
+
+        .main {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .file-list {
+            width: 170px;
+            background: #fff;
+            border-right: 1px solid #d0d7de;
+            overflow-y: auto;
+            flex-shrink: 0;
+            padding: 6px 0;
+        }
+        .file-list .file-item {
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 13px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .file-list .file-item:hover {
+            background: #f6f8fa;
+        }
+        .file-list .file-item.active {
+            background: #ddf4ff;
+            border-left: 3px solid #0969da;
+        }
+        .file-list .file-item .badge {
+            font-size: 11px;
+            color: #57606a;
+            background: #eaeef2;
+            padding: 0 6px;
+            border-radius: 10px;
+        }
+        .file-list .file-item .badge.modified {
+            background: #ddf4ff;
+            color: #0969da;
+        }
+
+        .editor-area {
+            flex: 1;
+            background: #fff;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        .editor-area .mode-tip {
+            padding: 4px 12px;
+            background: #f6f8fa;
+            border-bottom: 1px solid #d0d7de;
+            font-size: 12px;
+            color: #24292f;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+            min-height: 32px;
+        }
+        .editor-area .mode-tip .actions button {
+            margin-left: 6px;
+            padding: 2px 10px;
+            font-size: 11px;
+            border: 1px solid #d0d7de;
+            border-radius: 4px;
+            background: #fff;
+            cursor: pointer;
+        }
+        .editor-area .mode-tip .actions button:hover {
+            background: #f0f0f0;
+        }
+
+        .editor-content {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .editor-content iframe,
+        .editor-content textarea {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: block;
+        }
+        .editor-content textarea {
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 13px;
+            padding: 12px;
+            resize: none;
+            background: #fafbfc;
+            outline: none;
+        }
+        .editor-content iframe {
+            background: #fff;
+            flex: 1;
+        }
+
+        /* 右侧面板：树 + 属性 */
+        .right-panel {
+            width: 280px;
+            background: #f8f9fa;
+            border-left: 1px solid #d0d7de;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            min-width: 220px;
+        }
+        .right-panel .panel-header {
+            padding: 6px 12px;
+            background: #fff;
+            border-bottom: 1px solid #d0d7de;
+            font-weight: 600;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .right-panel .panel-header button {
+            background: none;
+            border: 1px solid #d0d7de;
+            border-radius: 4px;
+            padding: 2px 8px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+        .right-panel .panel-header button:hover {
+            background: #eaeef2;
+        }
+
+        .tree-container {
+            flex: 1;
+            overflow: auto;
+            padding: 4px 0;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            min-height: 120px;
+            border-bottom: 1px solid #d0d7de;
+        }
+        .tree-node {
+            padding: 1px 6px 1px 12px;
+            display: flex;
+            align-items: center;
+            white-space: nowrap;
+            position: relative;
+            gap: 3px;
+            cursor: pointer;
+            border-radius: 2px;
+            margin: 1px 4px;
+            border-left: 2px solid transparent;
+        }
+        .tree-node:hover {
+            background: rgba(0, 0, 0, 0.04);
+        }
+        .tree-node.selected {
+            background: #ddf4ff !important;
+            outline: 1px solid #0969da;
+        }
+        .tree-node.type-div {
+            background: rgba(100, 149, 237, 0.08);
+        }
+        .tree-node.type-svg {
+            background: rgba(34, 139, 34, 0.08);
+        }
+        .tree-node.type-path {
+            background: rgba(255, 182, 193, 0.12);
+        }
+        .tree-node.type-img {
+            background: rgba(255, 165, 0, 0.08);
+        }
+        .tree-node.type-other {
+            background: rgba(200, 200, 200, 0.06);
+        }
+        .tree-node .dir-indicator {
+            display: inline-block;
+            font-weight: bold;
+            color: #cf222e;
+            background: rgba(255, 255, 255, 0.6);
+            border: 1px solid #d0d7de;
+            border-radius: 3px;
+            padding: 0 4px;
+            font-size: 11px;
+            min-width: 18px;
+            text-align: center;
+            margin-right: 4px;
+            flex-shrink: 0;
+        }
+        .tree-node .tag {
+            color: #0550ae;
+            font-weight: 500;
+        }
+        .tree-node .attr {
+            color: #8250df;
+        }
+        .tree-node .text {
+            color: #24292f;
+        }
+        .tree-node .toggle {
+            display: inline-block;
+            width: 14px;
+            text-align: center;
+            cursor: pointer;
+            user-select: none;
+            color: #57606a;
+            flex-shrink: 0;
+            margin-right: 2px;
+        }
+        .tree-node .toggle:hover {
+            color: #24292f;
+        }
+        .tree-children {
+            padding-left: 16px;
+        }
+        .tree-children.collapsed {
+            display: none;
+        }
+
+        /* 属性面板 */
+        .props-panel {
+            flex-shrink: 0;
+            background: #fff;
+            padding: 8px 12px;
+            overflow-y: auto;
+            max-height: 280px;
+            min-height: 140px;
+            border-top: 1px solid #d0d7de;
+            font-size: 12px;
+        }
+        .props-panel .prop-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 2px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .props-panel .prop-row .pkey {
+            width: 60px;
+            font-weight: 500;
+            color: #57606a;
+            flex-shrink: 0;
+        }
+        .props-panel .prop-row .pval {
+            flex: 1;
+            font-family: 'Fira Code', monospace;
+            color: #24292f;
+        }
+        .props-panel .prop-row .pval input {
+            width: 70px;
+            padding: 1px 4px;
+            border: 1px solid #d0d7de;
+            border-radius: 3px;
+            font-size: 11px;
+            font-family: 'Fira Code', monospace;
+            text-align: center;
+        }
+        .props-panel .prop-row .pval input:focus {
+            outline: 1px solid #0969da;
+            border-color: #0969da;
+        }
+        .props-panel .prop-row .pbtn {
+            padding: 1px 8px;
+            font-size: 11px;
+            border: 1px solid #d0d7de;
+            border-radius: 3px;
+            background: #f6f8fa;
+            cursor: pointer;
+        }
+        .props-panel .prop-row .pbtn:hover {
+            background: #eaeef2;
+        }
+        .props-panel .prop-row .pbtn.primary {
+            background: #0969da;
+            color: #fff;
+            border-color: #0969da;
+        }
+        .props-panel .prop-row .pbtn.primary:hover {
+            background: #0550ae;
+        }
+        .props-panel .empty-props {
+            color: #8b949e;
+            text-align: center;
+            padding: 16px 0;
+        }
+        .props-panel .sel-tag {
+            font-weight: 600;
+            color: #0550ae;
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #8b949e;
+            font-size: 14px;
+        }
+        .empty-state .big-icon {
+            font-size: 40px;
+            margin-bottom: 8px;
+        }
+        .empty-state button {
+            margin-top: 12px;
+            padding: 6px 20px;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            background: #f6f8fa;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .empty-state button:hover {
+            background: #eaeef2;
+        }
+
+        @media (max-width: 800px) {
+            .right-panel {
+                width: 200px;
+                font-size: 11px;
+            }
+            .file-list {
+                width: 140px;
+            }
+            .props-panel {
+                max-height: 180px;
+                min-height: 100px;
+            }
+            .props-panel .prop-row .pkey {
+                width: 44px;
+            }
+            .props-panel .prop-row .pval input {
+                width: 50px;
+            }
+        }
+        @media (max-width: 600px) {
+            .right-panel {
+                display: none;
+            }
+            .file-list {
+                width: 120px;
+            }
+            .info-bar .coord-edit input {
+                width: 36px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <button class="primary" id="selectBtn">📁 选择文件</button>
+        <button id="undoBtn" class="undo-btn">↩️ 撤销 (Ctrl+Z)</button>
+        <button id="moveModeBtn" class="move-btn">🖱️ 移动模式 (开)</button>
+        <button id="saveBtn">💾 保存</button>
+        <span class="step-group">
+            <span>步进</span>
+            <input type="number" id="stepInput" value="1" min="1" max="50">
+            <span>px</span>
+        </span>
+        <button id="resetPosBtn" style="color:#cf222e;border-color:#cf222e;">⟲ 重置位置</button>
+        <span class="file-count" id="fileCount">已加载 0 个文件</span>
+        <span class="hint" id="statusHint">💡 点击元素 → 方向键移动</span>
+        <input type="file" id="fileInput" multiple accept=".html,.htm">
+    </div>
+
+    <!-- 信息栏 (取代原图例) -->
+    <div class="info-bar" id="infoBar">
+        <span class="label">🎯 选中元素：</span>
+        <span class="empty-msg" id="infoEmptyMsg">（未选中）</span>
+        <span class="info-item" id="infoTag" style="display:none;">
+            <span id="infoTagName">div</span>
+            <span style="color:#8b949e;margin:0 2px;">|</span>
+            <span id="infoId">#id</span>
+        </span>
+        <span class="info-item" id="infoPos" style="display:none;">
+            位置: <span class="val" id="infoLeft">0</span>px × <span class="val" id="infoTop">0</span>px
+        </span>
+        <span class="coord-edit" id="coordEdit" style="display:none;">
+            <span>L</span>
+            <input type="number" id="editLeft" value="0" step="1">
+            <span>T</span>
+            <input type="number" id="editTop" value="0" step="1">
+            <button id="applyCoordBtn">✓</button>
+        </span>
+        <span id="moveHint" style="color:#8b949e;font-size:11px;margin-left:auto;">↑↓←→ 移动 · Shift+方向 步进×10</span>
+    </div>
+
+    <div class="main">
+        <div class="file-list" id="fileList"></div>
+
+        <div class="editor-area">
+            <div class="mode-tip">
+                <span id="modeTip">📌 预览模式</span>
+                <span class="actions">
+                    <button id="refreshPreviewBtn">🔄 刷新</button>
+                    <button id="refreshTreeBtn">🌳 刷新元素树</button>
+                </span>
+            </div>
+            <div class="editor-content" id="editorContent">
+                <div class="empty-state" id="emptyState">
+                    <div class="big-icon">📄</div>
+                    <p>点击「选择文件」加载 HTML</p>
+                    <button id="emptySelectBtn">选择文件</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="right-panel" id="rightPanel">
+            <div class="panel-header">
+                <span>🌳 元素树</span>
+                <button id="collapseAllBtn">全部折叠</button>
+            </div>
+            <div class="tree-container" id="treeContainer">
+                <div style="padding:16px;color:#8b949e;text-align:center;font-size:13px;">
+                    加载文件后点击「刷新元素树」
+                </div>
+            </div>
+            <div class="props-panel" id="propsPanel">
+                <div class="empty-props">选中元素后显示属性</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            // ---------- 全局状态 ----------
+            const files = [];
+            let currentIndex = -1;
+            let isMoveMode = true; // 默认开启移动模式
+            let selectedElement = null;
+            let moveListenersAdded = false;
+
+            // 撤销栈
+            let undoStack = [];
+            const MAX_UNDO = 50;
+
+            // 步进
+            let stepSize = 1;
+
+            // DOM refs
+            const fileInput = document.getElementById('fileInput');
+            const selectBtn = document.getElementById('selectBtn');
+            const fileListEl = document.getElementById('fileList');
+            const editorContent = document.getElementById('editorContent');
+            const emptyState = document.getElementById('emptyState');
+            const modeTip = document.getElementById('modeTip');
+            const moveModeBtn = document.getElementById('moveModeBtn');
+            const saveBtn = document.getElementById('saveBtn');
+            const refreshPreviewBtn = document.getElementById('refreshPreviewBtn');
+            const refreshTreeBtn = document.getElementById('refreshTreeBtn');
+            const fileCount = document.getElementById('fileCount');
+            const emptySelectBtn = document.getElementById('emptySelectBtn');
+            const statusHint = document.getElementById('statusHint');
+            const treeContainer = document.getElementById('treeContainer');
+            const collapseAllBtn = document.getElementById('collapseAllBtn');
+            const undoBtn = document.getElementById('undoBtn');
+            const stepInput = document.getElementById('stepInput');
+            const resetPosBtn = document.getElementById('resetPosBtn');
+
+            // 信息栏
+            const infoEmptyMsg = document.getElementById('infoEmptyMsg');
+            const infoTag = document.getElementById('infoTag');
+            const infoTagName = document.getElementById('infoTagName');
+            const infoId = document.getElementById('infoId');
+            const infoPos = document.getElementById('infoPos');
+            const infoLeft = document.getElementById('infoLeft');
+            const infoTop = document.getElementById('infoTop');
+            const coordEdit = document.getElementById('coordEdit');
+            const editLeft = document.getElementById('editLeft');
+            const editTop = document.getElementById('editTop');
+            const applyCoordBtn = document.getElementById('applyCoordBtn');
+            const moveHint = document.getElementById('moveHint');
+
+            // 属性面板
+            const propsPanel = document.getElementById('propsPanel');
+
+            // 按钮状态
+            moveModeBtn.textContent = '🖱️ 移动模式 (开)';
+            moveModeBtn.classList.add('move-btn');
+
+            // ---------- 工具函数 ----------
+            function getElementPosition(el) {
+                if (!el) return { left: 0, top: 0 };
+                const left = parseFloat(el.style.left) || 0;
+                const top = parseFloat(el.style.top) || 0;
+                return { left, top };
+            }
+
+            function getElementDisplayName(el) {
+                if (!el) return '?';
+                const tag = el.tagName ? el.tagName.toLowerCase() : '?';
+                const id = el.id ? '#' + el.id : '';
+                const cls = el.className ? '.' + el.className.split(' ')[0] : '';
+                return tag + id + cls;
+            }
+
+            function getPositionStyle(el) {
+                if (!el) return 'static';
+                const pos = el.style.position || getComputedStyle(el).position;
+                return pos || 'static';
+            }
+
+            // 确保元素可定位（添加 position:relative 如果必要）
+            function ensurePositioned(el) {
+                if (!el) return;
+                const pos = el.style.position || getComputedStyle(el).position;
+                if (pos === 'static' || !pos) {
+                    el.style.position = 'relative';
+                }
+            }
+
+            // 记录移动操作到撤销栈
+            function pushUndoAction(undoData) {
+                if (!undoData || undoData.length === 0) return;
+                undoStack.push(undoData);
+                if (undoStack.length > MAX_UNDO) undoStack.shift();
+            }
+
+            // 获取当前文档
+            function getCurrentDoc() {
+                const iframe = document.querySelector('#editorContent iframe');
+                if (iframe && iframe.contentDocument) {
+                    return iframe.contentDocument;
+                }
+                return null;
+            }
+
+            // 获取当前文件内容（从iframe或textarea）
+            function getCurrentContent() {
+                const iframe = document.querySelector('#editorContent iframe');
+                if (iframe && iframe.contentDocument) {
+                    return iframe.contentDocument.documentElement.outerHTML;
+                }
+                const textarea = document.querySelector('#editorContent textarea');
+                if (textarea) {
+                    return textarea.value;
+                }
+                return null;
+            }
+
+            // 同步当前内容到文件对象
+            function syncContentToFile() {
+                if (currentIndex === -1 || !files[currentIndex]) return;
+                const content = getCurrentContent();
+                if (content) {
+                    files[currentIndex].content = content;
+                    files[currentIndex].modified = true;
+                    renderFileList();
+                }
+            }
+
+            // ---------- 移动核心逻辑 ----------
+            function moveElement(el, dx, dy, recordUndo = true) {
+                if (!el) return;
+                ensurePositioned(el);
+
+                // 记录旧位置用于撤销
+                const oldLeft = parseFloat(el.style.left) || 0;
+                const oldTop = parseFloat(el.style.top) || 0;
+                const newLeft = oldLeft + dx;
+                const newTop = oldTop + dy;
+
+                if (recordUndo) {
+                    pushUndoAction([{
+                        element: el,
+                        oldLeft: oldLeft,
+                        oldTop: oldTop,
+                        newLeft: newLeft,
+                        newTop: newTop
+                    }]);
+                }
+
+                el.style.left = newLeft + 'px';
+                el.style.top = newTop + 'px';
+
+                // 更新UI
+                updateInfoBar(el);
+                updatePropsPanel(el);
+                if (currentIndex !== -1 && files[currentIndex]) {
+                    files[currentIndex].modified = true;
+                    renderFileList();
+                }
+                statusHint.textContent = `📍 移动: (${newLeft}, ${newTop})`;
+            }
+
+            // 重置位置
+            function resetElementPosition(el) {
+                if (!el) return;
+                const oldLeft = parseFloat(el.style.left) || 0;
+                const oldTop = parseFloat(el.style.top) || 0;
+                if (oldLeft === 0 && oldTop === 0) {
+                    statusHint.textContent = '⚠️ 元素已在初始位置';
+                    return;
+                }
+                pushUndoAction([{
+                    element: el,
+                    oldLeft: oldLeft,
+                    oldTop: oldTop,
+                    newLeft: 0,
+                    newTop: 0
+                }]);
+                el.style.left = '0px';
+                el.style.top = '0px';
+                updateInfoBar(el);
+                updatePropsPanel(el);
+                if (currentIndex !== -1 && files[currentIndex]) {
+                    files[currentIndex].modified = true;
+                    renderFileList();
+                }
+                statusHint.textContent = `⟲ 重置位置到 (0, 0)`;
+            }
+
+            // 撤销移动
+            function performUndo() {
+                if (undoStack.length === 0) {
+                    statusHint.textContent = '⚠️ 没有可撤销的操作';
+                    return;
+                }
+                const actions = undoStack.pop();
+                let restored = 0;
+                for (let action of actions) {
+                    if (action.element) {
+                        action.element.style.left = action.oldLeft + 'px';
+                        action.element.style.top = action.oldTop + 'px';
+                        restored++;
+                    }
+                }
+                if (restored > 0) {
+                    if (selectedElement) {
+                        updateInfoBar(selectedElement);
+                        updatePropsPanel(selectedElement);
+                    }
+                    if (currentIndex !== -1 && files[currentIndex]) {
+                        files[currentIndex].modified = true;
+                        renderFileList();
+                    }
+                    statusHint.textContent = `↩️ 已撤销 ${restored} 个移动操作`;
+                } else {
+                    statusHint.textContent = '⚠️ 撤销失败';
+                }
+            }
+
+            // ---------- 信息栏更新 ----------
+            function updateInfoBar(el) {
+                if (!el) {
+                    infoEmptyMsg.style.display = 'inline';
+                    infoTag.style.display = 'none';
+                    infoPos.style.display = 'none';
+                    coordEdit.style.display = 'none';
+                    return;
+                }
+                infoEmptyMsg.style.display = 'none';
+                infoTag.style.display = 'inline-flex';
+                infoPos.style.display = 'inline-flex';
+                coordEdit.style.display = 'inline-flex';
+
+                const tag = el.tagName ? el.tagName.toLowerCase() : '?';
+                const id = el.id ? '#' + el.id : '';
+                infoTagName.textContent = tag;
+                infoId.textContent = id || '(无id)';
+
+                const pos = getElementPosition(el);
+                infoLeft.textContent = pos.left;
+                infoTop.textContent = pos.top;
+                editLeft.value = pos.left;
+                editTop.value = pos.top;
+            }
+
+            // ---------- 属性面板更新 ----------
+            function updatePropsPanel(el) {
+                if (!el) {
+                    propsPanel.innerHTML = `<div class="empty-props">选中元素后显示属性</div>`;
+                    return;
+                }
+                const tag = el.tagName ? el.tagName.toLowerCase() : '?';
+                const id = el.id ? '#' + el.id : '';
+                const cls = el.className ? '.' + el.className.split(' ')[0] : '';
+                const pos = getElementPosition(el);
+                const position = getPositionStyle(el);
+
+                let html = `<div class="sel-tag">&lt;${tag}${id}${cls}&gt;</div>`;
+                html += `<div class="prop-row"><span class="pkey">position</span><span class="pval">${position}</span></div>`;
+                html +=
+                    `<div class="prop-row"><span class="pkey">left</span><span class="pval"><input type="number" id="propLeft" value="${pos.left}" step="1"> px</span></div>`;
+                html +=
+                    `<div class="prop-row"><span class="pkey">top</span><span class="pval"><input type="number" id="propTop" value="${pos.top}" step="1"> px</span></div>`;
+                html += `<div class="prop-row" style="border-bottom:none;padding-top:4px;gap:8px;">
+                    <button class="pbtn primary" id="propApplyBtn">应用</button>
+                    <button class="pbtn" id="propResetBtn">重置</button>
+                </div>`;
+                propsPanel.innerHTML = html;
+
+                // 绑定属性面板事件
+                const propLeft = document.getElementById('propLeft');
+                const propTop = document.getElementById('propTop');
+                const propApplyBtn = document.getElementById('propApplyBtn');
+                const propResetBtn = document.getElementById('propResetBtn');
+
+                if (propApplyBtn) {
+                    propApplyBtn.addEventListener('click', function() {
+                        if (!selectedElement) return;
+                        const l = parseFloat(propLeft.value) || 0;
+                        const t = parseFloat(propTop.value) || 0;
+                        const oldPos = getElementPosition(selectedElement);
+                        if (l === oldPos.left && t === oldPos.top) {
+                            statusHint.textContent = '⏳ 位置未改变';
+                            return;
+                        }
+                        pushUndoAction([{
+                            element: selectedElement,
+                            oldLeft: oldPos.left,
+                            oldTop: oldPos.top,
+                            newLeft: l,
+                            newTop: t
+                        }]);
+                        selectedElement.style.left = l + 'px';
+                        selectedElement.style.top = t + 'px';
+                        ensurePositioned(selectedElement);
+                        updateInfoBar(selectedElement);
+                        updatePropsPanel(selectedElement);
+                        if (currentIndex !== -1 && files[currentIndex]) {
+                            files[currentIndex].modified = true;
+                            renderFileList();
+                        }
+                        statusHint.textContent = `📐 位置设为 (${l}, ${t})`;
+                    });
+                }
+                if (propResetBtn) {
+                    propResetBtn.addEventListener('click', function() {
+                        if (selectedElement) resetElementPosition(selectedElement);
+                    });
+                }
+                // 输入框回车触发应用
+                if (propLeft) propLeft.addEventListener('keydown', (e) => { if (e.key === 'Enter') propApplyBtn &&
+                        propApplyBtn.click(); });
+                if (propTop) propTop.addEventListener('keydown', (e) => { if (e.key === 'Enter') propApplyBtn &&
+                        propApplyBtn.click(); });
+            }
+
+            // ---------- 选中元素 ----------
+            function selectElement(el) {
+                // 清除旧选中
+                if (selectedElement) {
+                    try { selectedElement.style.outline = ''; } catch (_) {}
+                }
+                document.querySelectorAll('.tree-node.selected').forEach(n => n.classList.remove('selected'));
+
+                if (!el) {
+                    selectedElement = null;
+                    updateInfoBar(null);
+                    updatePropsPanel(null);
+                    statusHint.textContent = '💡 点击元素 → 方向键移动';
+                    return;
+                }
+
+                selectedElement = el;
+                el.style.outline = '3px solid #0969da';
+                ensurePositioned(el);
+
+                updateInfoBar(el);
+                updatePropsPanel(el);
+                highlightTreeNode(el);
+                statusHint.textContent = `✅ 已选中: <${el.tagName.toLowerCase()}> 使用方向键移动`;
+            }
+
+            // ---------- 鼠标事件（移动模式） ----------
+            function handleMouseOver(e) {
+                if (!isMoveMode) return;
+                const target = e.target;
+                if (target && target.nodeType === 1 && target !== selectedElement) {
+                    target.style.outline = '2px dashed #8250df';
+                }
+            }
+
+            function handleMouseOut(e) {
+                if (!isMoveMode) return;
+                const target = e.target;
+                if (target && target.nodeType === 1 && target !== selectedElement) {
+                    target.style.outline = '';
+                }
+            }
+
+            function handleClick(e) {
+                if (!isMoveMode) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const target = e.target;
+                if (!target || target.nodeType !== 1) return;
+                const doc = target.ownerDocument;
+                if (target === doc.body || target === doc.documentElement) {
+                    // 允许选中body，但不允许选中根元素进行移动
+                    statusHint.textContent = '⚠️ 不能移动根元素，请选择子元素';
+                    return;
+                }
+                // 如果点击的是已经选中的元素，取消选中？还是保持选中？保持选中并更新信息
+                if (selectedElement === target) {
+                    // 重新显示信息
+                    updateInfoBar(target);
+                    updatePropsPanel(target);
+                    return;
+                }
+                selectElement(target);
+            }
+
+            function applyMoveListeners() {
+                const iframe = document.querySelector('#editorContent iframe');
+                if (!iframe) return;
+                const doc = iframe.contentDocument;
+                if (!doc) return;
+                removeMoveListeners();
+                doc.addEventListener('mouseover', handleMouseOver);
+                doc.addEventListener('mouseout', handleMouseOut);
+                doc.addEventListener('click', handleClick, true);
+                moveListenersAdded = true;
+                // 恢复选中状态
+                if (selectedElement) {
+                    try {
+                        const doc2 = selectedElement.ownerDocument;
+                        if (doc2 === doc) {
+                            selectedElement.style.outline = '3px solid #0969da';
+                        } else {
+                            selectedElement = null;
+                            updateInfoBar(null);
+                            updatePropsPanel(null);
+                        }
+                    } catch (_) { selectedElement = null; }
+                }
+                statusHint.textContent = '🖱️ 点击元素选中，方向键移动';
+            }
+
+            function removeMoveListeners() {
+                const iframe = document.querySelector('#editorContent iframe');
+                if (!iframe) return;
+                const doc = iframe.contentDocument;
+                if (!doc) return;
+                if (moveListenersAdded) {
+                    doc.removeEventListener('mouseover', handleMouseOver);
+                    doc.removeEventListener('mouseout', handleMouseOut);
+                    doc.removeEventListener('click', handleClick, true);
+                    moveListenersAdded = false;
+                }
+                if (selectedElement) {
+                    try { selectedElement.style.outline = ''; } catch (_) {}
+                }
+            }
+
+            // ---------- 键盘事件 ----------
+            document.addEventListener('keydown', function(e) {
+                // 撤销
+                if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                    e.preventDefault();
+                    performUndo();
+                    return;
+                }
+
+                if (!isMoveMode || !selectedElement) return;
+
+                const isShift = e.shiftKey;
+                const step = isShift ? stepSize * 10 : stepSize;
+
+                let dx = 0,
+                    dy = 0;
+                switch (e.key) {
+                    case 'ArrowUp':
+                        dy = -step;
+                        e.preventDefault();
+                        break;
+                    case 'ArrowDown':
+                        dy = step;
+                        e.preventDefault();
+                        break;
+                    case 'ArrowLeft':
+                        dx = -step;
+                        e.preventDefault();
+                        break;
+                    case 'ArrowRight':
+                        dx = step;
+                        e.preventDefault();
+                        break;
+                    default:
+                        return;
+                }
+                moveElement(selectedElement, dx, dy, true);
+            });
+
+            // ---------- 树节点高亮 ----------
+            function highlightTreeNode(domElement) {
+                document.querySelectorAll('.tree-node.selected').forEach(el => el.classList.remove('selected'));
+                if (!domElement) return;
+                const nodes = treeContainer.querySelectorAll('.tree-node');
+                for (let node of nodes) {
+                    if (node._element === domElement) {
+                        node.classList.add('selected');
+                        node.scrollIntoView({ block: 'nearest' });
+                        break;
+                    }
+                }
+            }
+
+            // ---------- 构建DOM树 ----------
+            function buildTree(doc) {
+                if (!doc) {
+                    const iframe = document.querySelector('#editorContent iframe');
+                    if (iframe && iframe.contentDocument) doc = iframe.contentDocument;
+                    else {
+                        treeContainer.innerHTML =
+                        '<div style="padding:16px;color:#8b949e;text-align:center;">请先加载文件并切换到预览模式</div>';
+                        return;
+                    }
+                }
+                const root = doc.documentElement;
+                if (!root) {
+                    treeContainer.innerHTML = '<div style="padding:16px;color:#8b949e;text-align:center;">无法获取DOM</div>';
+                    return;
+                }
+
+                function getTypeClass(tag) {
+                    if (tag === 'div') return 'type-div';
+                    if (tag === 'svg') return 'type-svg';
+                    if (tag === 'path') return 'type-path';
+                    if (tag === 'img') return 'type-img';
+                    return 'type-other';
+                }
+
+                function buildNode(el) {
+                    const tag = el.tagName ? el.tagName.toLowerCase() : '#text';
+                    const id = el.id ? ` id="${el.id}"` : '';
+                    const classes = el.className ? ` class="${el.className}"` : '';
+                    let label = `<span class="tag">&lt;${tag}${id}${classes}&gt;</span>`;
+
+                    const node = document.createElement('div');
+                    node.className = `tree-node ${getTypeClass(tag)}`;
+                    node._element = el;
+
+                    node.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        if (!isMoveMode) {
+                            statusHint.textContent = '⚠️ 请先开启移动模式';
+                            return;
+                        }
+                        if (el === selectedElement) {
+                            updateInfoBar(el);
+                            updatePropsPanel(el);
+                            return;
+                        }
+                        selectElement(el);
+                    });
+
+                    const hasChildren = el.children && el.children.length > 0;
+                    const toggleSpan = document.createElement('span');
+                    toggleSpan.className = 'toggle';
+                    if (hasChildren) {
+                        toggleSpan.textContent = '▾';
+                        toggleSpan.addEventListener('click', function(ev) {
+                            ev.stopPropagation();
+                            const childContainer = node.nextElementSibling;
+                            if (childContainer && childContainer.classList.contains('tree-children')) {
+                                childContainer.classList.toggle('collapsed');
+                                this.textContent = childContainer.classList.contains('collapsed') ? '▸' : '▾';
+                            }
+                        });
+                    } else {
+                        toggleSpan.textContent = '·';
+                    }
+                    node.appendChild(toggleSpan);
+
+                    const dirSpan = document.createElement('span');
+                    dirSpan.className = 'dir-indicator';
+                    let dirChar = '·';
+                    if (tag === 'svg') dirChar = '◇';
+                    else if (tag === 'img') dirChar = '🖼';
+                    else if (tag === 'div') dirChar = '▣';
+                    else if (tag === 'span') dirChar = '⧗';
+                    else if (tag === 'p') dirChar = '¶';
+                    else if (tag === 'a') dirChar = '🔗';
+                    dirSpan.textContent = dirChar;
+                    node.appendChild(dirSpan);
+
+                    const labelSpan = document.createElement('span');
+                    labelSpan.innerHTML = label;
+                    node.appendChild(labelSpan);
+
+                    const childrenDiv = document.createElement('div');
+                    childrenDiv.className = 'tree-children';
+                    if (hasChildren) {
+                        for (let child of el.children) {
+                            childrenDiv.appendChild(buildNode(child));
+                        }
+                    } else {
+                        let text = '';
+                        for (let n of el.childNodes) {
+                            if (n.nodeType === 3) text += n.textContent.trim();
+                        }
+                        if (text) {
+                            const textNode = document.createElement('div');
+                            textNode.className = 'tree-node type-other';
+                            textNode.style.cursor = 'default';
+                            textNode.innerHTML = `<span class="text">${text.substring(0, 30)}</span>`;
+                            childrenDiv.appendChild(textNode);
+                        }
+                    }
+
+                    const wrapper = document.createElement('div');
+                    wrapper.appendChild(node);
+                    if (hasChildren || childrenDiv.children.length > 0) {
+                        wrapper.appendChild(childrenDiv);
+                    }
+                    return wrapper;
+                }
+
+                treeContainer.innerHTML = '';
+                const rootWrapper = buildNode(root);
+                treeContainer.appendChild(rootWrapper);
+
+                // 如果当前有选中的元素，高亮树节点
+                if (selectedElement) {
+                    highlightTreeNode(selectedElement);
+                }
+            }
+
+            function refreshTree() {
+                const iframe = document.querySelector('#editorContent iframe');
+                if (!iframe || !iframe.contentDocument) {
+                    statusHint.textContent = '⚠️ 请先加载文件并切换到预览模式';
+                    return;
+                }
+                const doc = iframe.contentDocument;
+                buildTree(doc);
+                statusHint.textContent = '🌳 元素树已刷新';
+            }
+
+            // ---------- 显示文件 ----------
+            function displayFile(idx) {
+                undoStack = [];
+                if (selectedElement) {
+                    try { selectedElement.style.outline = ''; } catch (_) {}
+                    selectedElement = null;
+                }
+                if (moveListenersAdded) {
+                    removeMoveListeners();
+                }
+
+                if (idx < 0 || idx >= files.length) {
+                    editorContent.innerHTML =
+                        `<div class="empty-state"><div class="big-icon">📄</div><p>请选择一个文件</p></div>`;
+                    treeContainer.innerHTML = '<div style="padding:16px;color:#8b949e;text-align:center;">暂无文件</div>';
+                    propsPanel.innerHTML = '<div class="empty-props">选中元素后显示属性</div>';
+                    updateInfoBar(null);
+                    return;
+                }
+
+                const f = files[idx];
+                editorContent.innerHTML = '';
+                const iframe = document.createElement('iframe');
+                iframe.sandbox = 'allow-same-origin allow-scripts allow-forms allow-popups allow-modals';
+                iframe.srcdoc = f.content;
+                iframe.style.width = '100%';
+                iframe.style.height = '100%';
+                iframe.style.border = 'none';
+                editorContent.appendChild(iframe);
+
+                iframe.onload = function() {
+                    try {
+                        const doc = iframe.contentDocument;
+                        if (doc) {
+                            buildTree(doc);
+                            if (isMoveMode) {
+                                applyMoveListeners();
+                            }
+                            // 如果有选中的元素，在树中高亮
+                            if (selectedElement) {
+                                highlightTreeNode(selectedElement);
+                            }
+                            // 确保body不可编辑（移动模式专用）
+                            try { doc.designMode = 'off'; } catch (_) {}
+                        }
+                    } catch (e) {
+                        console.warn('iframe load error:', e);
+                    }
+                };
+
+                // 如果已经加载完成
+                if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') {
+                    iframe.onload();
+                }
+
+                modeTip.innerHTML = '📌 预览模式 · 移动模式';
+                statusHint.textContent = isMoveMode ? '🖱️ 点击元素选中，方向键移动' : '⏸️ 移动模式已关闭';
+                renderFileList();
+                updateInfoBar(null);
+                propsPanel.innerHTML = '<div class="empty-props">选中元素后显示属性</div>';
+            }
+
+            // ---------- 刷新预览 ----------
+            function refreshPreview() {
+                if (currentIndex === -1) return;
+                const f = files[currentIndex];
+                const iframe = document.querySelector('#editorContent iframe');
+                if (iframe) {
+                    // 保存当前修改
+                    syncContentToFile();
+                    iframe.srcdoc = f.content;
+                    iframe.onload = function() {
+                        try {
+                            const doc = iframe.contentDocument;
+                            if (doc) {
+                                buildTree(doc);
+                                if (isMoveMode) applyMoveListeners();
+                                if (selectedElement) highlightTreeNode(selectedElement);
+                                try { doc.designMode = 'off'; } catch (_) {}
+                            }
+                        } catch (e) {}
+                    };
+                    statusHint.textContent = '🔄 预览已刷新';
+                }
+            }
+
+            // ---------- 切换移动模式 ----------
+            function toggleMoveMode() {
+                if (currentIndex === -1) { alert('请先加载并选择一个文件'); return; }
+                isMoveMode = !isMoveMode;
+                if (isMoveMode) {
+                    moveModeBtn.textContent = '🖱️ 移动模式 (开)';
+                    moveModeBtn.classList.add('move-btn');
+                    // 清除选中
+                    if (selectedElement) {
+                        try { selectedElement.style.outline = ''; } catch (_) {}
+                        selectedElement = null;
+                        updateInfoBar(null);
+                        propsPanel.innerHTML = '<div class="empty-props">选中元素后显示属性</div>';
+                    }
+                    applyMoveListeners();
+                    const iframe = document.querySelector('#editorContent iframe');
+                    if (iframe && iframe.contentDocument) {
+                        try { iframe.contentDocument.designMode = 'off'; } catch (_) {}
+                    }
+                    statusHint.textContent = '🖱️ 移动模式已开启，点击元素选中，方向键移动';
+                } else {
+                    moveModeBtn.textContent = '🖱️ 移动模式 (关)';
+                    moveModeBtn.classList.remove('move-btn');
+                    removeMoveListeners();
+                    if (selectedElement) {
+                        try { selectedElement.style.outline = ''; } catch (_) {}
+                        selectedElement = null;
+                        updateInfoBar(null);
+                        propsPanel.innerHTML = '<div class="empty-props">选中元素后显示属性</div>';
+                    }
+                    statusHint.textContent = '⏸️ 移动模式已关闭';
+                }
+            }
+
+            // ---------- 保存 ----------
+            function saveCurrentFile() {
+                if (currentIndex === -1) { alert('没有打开的文件'); return; }
+                syncContentToFile();
+                const f = files[currentIndex];
+                const blob = new Blob([f.content], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = f.name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                f.modified = false;
+                renderFileList();
+                statusHint.textContent = `💾 已保存 ${f.name}`;
+            }
+
+            // ---------- 文件列表 ----------
+            function renderFileList() {
+                fileListEl.innerHTML = '';
+                if (files.length === 0) {
+                    fileListEl.innerHTML =
+                    `<div style="padding:16px;color:#8b949e;text-align:center;">暂无文件</div>`;
+                    return;
+                }
+                files.forEach((f, idx) => {
+                    const div = document.createElement('div');
+                    div.className = 'file-item' + (idx === currentIndex ? ' active' : '');
+                    const badgeClass = f.modified ? 'badge modified' : 'badge';
+                    div.innerHTML =
+                        `<span>${f.name}</span><span class="${badgeClass}">${f.modified ? '✎' : ''}</span>`;
+                    div.addEventListener('click', () => {
+                        if (currentIndex === idx) return;
+                        if (currentIndex !== -1) syncContentToFile();
+                        currentIndex = idx;
+                        displayFile(idx);
+                    });
+                    fileListEl.appendChild(div);
+                });
+                fileCount.textContent = `已加载 ${files.length} 个文件`;
+            }
+
+            // ---------- 加载文件 ----------
+            function loadFiles(fileList) {
+                const fileArray = Array.from(fileList);
+                if (fileArray.length === 0) return;
+                let loaded = 0;
+                fileArray.forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        files.push({ name: file.name, content: e.target.result, modified: false });
+                        loaded++;
+                        if (loaded === fileArray.length) {
+                            if (files.length > 0 && currentIndex === -1) {
+                                currentIndex = 0;
+                                renderFileList();
+                                displayFile(0);
+                            } else {
+                                renderFileList();
+                            }
+                            statusHint.textContent = `📂 已加载 ${files.length} 个文件`;
+                        }
+                    };
+                    reader.onerror = function() { alert(`读取文件 ${file.name} 失败`);
+                        loaded++; };
+                    reader.readAsText(file);
+                });
+                if (fileArray.length === 0) renderFileList();
+            }
+
+            // ---------- 事件绑定 ----------
+            selectBtn.addEventListener('click', () => fileInput.click());
+            emptySelectBtn.addEventListener('click', () => fileInput.click());
+
+            fileInput.addEventListener('change', function(e) {
+                if (this.files.length > 0) loadFiles(this.files);
+                this.value = '';
+            });
+
+            undoBtn.addEventListener('click', performUndo);
+
+            moveModeBtn.addEventListener('click', toggleMoveMode);
+
+            saveBtn.addEventListener('click', saveCurrentFile);
+
+            refreshPreviewBtn.addEventListener('click', refreshPreview);
+
+            refreshTreeBtn.addEventListener('click', refreshTree);
+
+            collapseAllBtn.addEventListener('click', function() {
+                const allChildren = treeContainer.querySelectorAll('.tree-children');
+                allChildren.forEach(ch => ch.classList.add('collapsed'));
+                const firstLevel = treeContainer.querySelectorAll('.tree-children');
+                if (firstLevel.length > 0) firstLevel[0].classList.remove('collapsed');
+            });
+
+            resetPosBtn.addEventListener('click', function() {
+                if (selectedElement) {
+                    resetElementPosition(selectedElement);
+                } else {
+                    statusHint.textContent = '⚠️ 请先选中一个元素';
+                }
+            });
+
+            applyCoordBtn.addEventListener('click', function() {
+                if (!selectedElement) {
+                    statusHint.textContent = '⚠️ 请先选中一个元素';
+                    return;
+                }
+                const l = parseFloat(editLeft.value) || 0;
+                const t = parseFloat(editTop.value) || 0;
+                const oldPos = getElementPosition(selectedElement);
+                if (l === oldPos.left && t === oldPos.top) {
+                    statusHint.textContent = '⏳ 位置未改变';
+                    return;
+                }
+                pushUndoAction([{
+                    element: selectedElement,
+                    oldLeft: oldPos.left,
+                    oldTop: oldPos.top,
+                    newLeft: l,
+                    newTop: t
+                }]);
+                selectedElement.style.left = l + 'px';
+                selectedElement.style.top = t + 'px';
+                ensurePositioned(selectedElement);
+                updateInfoBar(selectedElement);
+                updatePropsPanel(selectedElement);
+                if (currentIndex !== -1 && files[currentIndex]) {
+                    files[currentIndex].modified = true;
+                    renderFileList();
+                }
+                statusHint.textContent = `📐 位置设为 (${l}, ${t})`;
+            });
+
+            // 步进输入
+            stepInput.addEventListener('change', function() {
+                let val = parseInt(this.value) || 1;
+                if (val < 1) val = 1;
+                if (val > 50) val = 50;
+                stepSize = val;
+                this.value = val;
+            });
+
+            // Ctrl+S 保存
+            document.addEventListener('keydown', function(e) {
+                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                    e.preventDefault();
+                    saveCurrentFile();
+                }
+            });
+
+            // 拖拽加载
+            document.body.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                document.body.style.backgroundColor = '#e6f3ff';
+            });
+            document.body.addEventListener('dragleave', () => {
+                document.body.style.backgroundColor = '';
+            });
+            document.body.addEventListener('drop', (e) => {
+                e.preventDefault();
+                document.body.style.backgroundColor = '';
+                const items = e.dataTransfer.files;
+                if (items.length > 0) loadFiles(items);
+            });
+
+            // 初始化
+            renderFileList();
+            statusHint.textContent = '💡 选择文件，点击元素，方向键移动';
+
+            // 如果进入移动模式时加载了文件，应用监听
+            // 在displayFile中会调用applyMoveListeners
+
+        })();
+    </script>
+</body>
+</html>

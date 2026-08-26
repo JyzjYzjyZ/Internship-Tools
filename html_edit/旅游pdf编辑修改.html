@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF竖线颜色 + 文本标记工具</title>
+    <style>
+        * { box-sizing:border-box; margin:0; padding:0; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #f0f2f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .toolbar {
+            background: #fff;
+            padding: 8px 16px;
+            border-bottom: 1px solid #d0d7de;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+        .toolbar button {
+            padding: 4px 12px;
+            border: 1px solid #d0d7de;
+            border-radius: 4px;
+            background: #f6f8fa;
+            cursor: pointer;
+            font-size: 12px;
+            transition: 0.2s;
+            white-space: nowrap;
+        }
+        .toolbar button:hover { background: #eaeef2; }
+        .toolbar button.primary { background: #1f883d; color:#fff; border-color:#1f883d; }
+        .toolbar button.primary:hover { background: #1a7a34; }
+        .toolbar button.danger { background: #cf222e; color:#fff; border-color:#cf222e; }
+        .toolbar button.danger:hover { background: #b11f2b; }
+        .toolbar button.undo-btn { background: #0969da; color:#fff; border-color:#0969da; }
+        .toolbar button.undo-btn:hover { background: #0550ae; }
+        .toolbar .file-count { font-size:13px; color:#57606a; margin-left:auto; }
+        .toolbar .hint { font-size:12px; color:#8b949e; background:#f6f8fa; padding:2px 10px; border-radius:12px; }
+        #fileInput { display:none; }
+
+        .color-legend {
+            background: #fff;
+            padding: 6px 16px;
+            border-bottom: 1px solid #d0d7de;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+            min-height: 44px;
+        }
+        .color-legend .legend-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #24292f;
+            margin-right: 4px;
+        }
+        .color-legend .legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #f6f8fa;
+            border: 1px solid #d0d7de;
+            border-radius: 16px;
+            padding: 2px 10px 2px 6px;
+            cursor: pointer;
+            transition: 0.2s;
+            font-size: 12px;
+        }
+        .color-legend .legend-item:hover {
+            background: #eaeef2;
+            transform: scale(1.04);
+        }
+        .color-legend .legend-item .swatch {
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            border: 1px solid rgba(0,0,0,0.15);
+            flex-shrink: 0;
+        }
+        .color-legend .legend-item .count {
+            color: #57606a;
+            font-size: 11px;
+        }
+        .color-legend .legend-item .del-icon {
+            color: #cf222e;
+            font-weight: bold;
+            margin-left: 2px;
+            font-size: 13px;
+        }
+        .color-legend .empty-msg {
+            color: #8b949e;
+            font-size: 12px;
+        }
+
+        /* 新增：文本处理工具栏 */
+        .text-toolbar {
+            background: #f8f9fa;
+            padding: 4px 16px;
+            border-bottom: 1px solid #d0d7de;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+        .text-toolbar .label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #24292f;
+            margin-right: 4px;
+        }
+        .text-toolbar button {
+            padding: 2px 12px;
+            border: 1px solid #d0d7de;
+            border-radius: 4px;
+            background: #fff;
+            cursor: pointer;
+            font-size: 11px;
+            transition: 0.2s;
+            white-space: nowrap;
+        }
+        .text-toolbar button:hover { background: #eaeef2; }
+        .text-toolbar button.mark-btn { background: #ddf4ff; border-color: #0969da; color: #0550ae; }
+        .text-toolbar button.mark-btn:hover { background: #b3d9ff; }
+        .text-toolbar button.replace-btn { background: #dafbe1; border-color: #1f883d; color: #1a7a34; }
+        .text-toolbar button.replace-btn:hover { background: #b8e6c8; }
+        .text-toolbar button.delete-btn { background: #ffd7d7; border-color: #cf222e; color: #b11f2b; }
+        .text-toolbar button.delete-btn:hover { background: #ffb3b3; }
+        .text-toolbar .info { font-size: 11px; color: #57606a; margin-left: auto; }
+
+        .main { display:flex; flex:1; min-height:0; }
+
+        .file-list {
+            width:180px; background:#fff; border-right:1px solid #d0d7de;
+            overflow-y:auto; flex-shrink:0; padding:6px 0;
+        }
+        .file-list .file-item {
+            padding:6px 12px; cursor:pointer; font-size:13px;
+            border-bottom:1px solid #f0f0f0;
+            display:flex; justify-content:space-between; align-items:center;
+        }
+        .file-list .file-item:hover { background:#f6f8fa; }
+        .file-list .file-item.active { background:#ddf4ff; border-left:3px solid #0969da; }
+        .file-list .file-item .badge {
+            font-size:11px; color:#57606a; background:#eaeef2; padding:0 6px; border-radius:10px;
+        }
+        .file-list .file-item .badge.modified { background:#ddf4ff; color:#0969da; }
+
+        .editor-area {
+            flex:1; background:#fff; display:flex; flex-direction:column; min-width:0;
+        }
+        .editor-area .mode-tip {
+            padding:4px 12px; background:#f6f8fa; border-bottom:1px solid #d0d7de;
+            font-size:12px; color:#24292f;
+            display:flex; justify-content:space-between; align-items:center;
+            flex-shrink:0; min-height:32px;
+        }
+        .editor-area .mode-tip .actions button {
+            margin-left:6px; padding:2px 10px; font-size:11px;
+            border:1px solid #d0d7de; border-radius:4px; background:#fff; cursor:pointer;
+        }
+        .editor-area .mode-tip .actions button:hover { background:#f0f0f0; }
+
+        .editor-content {
+            flex:1; position:relative; overflow:hidden;
+            display:flex;
+            flex-direction: column;
+        }
+        .editor-content iframe,
+        .editor-content textarea {
+            width:100%; height:100%; border:none; display:block;
+        }
+        .editor-content textarea {
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size:13px; padding:12px; resize:none; background:#fafbfc; outline:none;
+        }
+        .editor-content iframe { background:#fff; flex:1; }
+
+        .element-list-panel {
+            width:280px; background:#f8f9fa; border-left:1px solid #d0d7de;
+            display:flex; flex-direction:column; flex-shrink:0;
+        }
+        .element-list-panel .panel-header {
+            padding:6px 12px; background:#fff; border-bottom:1px solid #d0d7de;
+            font-weight:600; font-size:12px;
+            display:flex; justify-content:space-between; align-items:center; flex-shrink:0;
+        }
+        .element-list-panel .panel-header button {
+            background:none; border:1px solid #d0d7de; border-radius:4px;
+            padding:2px 8px; cursor:pointer; font-size:11px;
+        }
+        .element-list-panel .panel-header button:hover { background:#eaeef2; }
+
+        .tree-container {
+            flex:1; overflow:auto; padding:4px 0;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size:12px; line-height:1.6;
+        }
+        .tree-node {
+            padding:1px 6px 1px 12px;
+            display:flex; align-items:center; white-space:nowrap;
+            position:relative; gap:3px; cursor:pointer;
+            border-radius:2px; margin:1px 4px;
+            border-left: 2px solid transparent;
+        }
+        .tree-node:hover { background:rgba(0,0,0,0.04); }
+        .tree-node.selected { background:#ddf4ff !important; outline:1px solid #0969da; }
+
+        .tree-node.type-div { background:rgba(100,149,237,0.08); }
+        .tree-node.type-svg { background:rgba(34,139,34,0.08); }
+        .tree-node.type-path { background:rgba(255,182,193,0.12); }
+        .tree-node.type-img { background:rgba(255,165,0,0.08); }
+        .tree-node.type-other { background:rgba(200,200,200,0.06); }
+
+        .tree-node.vertical-line {
+            border-left-width: 3px;
+        }
+
+        .tree-node .dir-indicator {
+            display:inline-block; font-weight:bold; color:#cf222e;
+            background:rgba(255,255,255,0.6); border:1px solid #d0d7de; border-radius:3px;
+            padding:0 4px; font-size:11px; min-width:18px; text-align:center;
+            margin-right:4px; flex-shrink:0;
+        }
+        .tree-node .tag { color:#0550ae; font-weight:500; }
+        .tree-node .attr { color:#8250df; }
+        .tree-node .text { color:#24292f; }
+
+        .tree-node .toggle {
+            display:inline-block; width:14px; text-align:center;
+            cursor:pointer; user-select:none; color:#57606a; flex-shrink:0;
+            margin-right:2px;
+        }
+        .tree-node .toggle:hover { color:#24292f; }
+
+        .tree-children { padding-left:16px; }
+        .tree-children.collapsed { display:none; }
+
+        .empty-state {
+            display:flex; flex-direction:column; align-items:center; justify-content:center;
+            height:100%; color:#8b949e; font-size:14px;
+        }
+        .empty-state .big-icon { font-size:40px; margin-bottom:8px; }
+        .empty-state button {
+            margin-top:12px; padding:6px 20px;
+            border:1px solid #d0d7de; border-radius:6px;
+            background:#f6f8fa; cursor:pointer; font-size:13px;
+        }
+        .empty-state button:hover { background:#eaeef2; }
+
+        @media (max-width:800px) {
+            .element-list-panel { width:200px; font-size:11px; }
+            .file-list { width:140px; }
+        }
+        @media (max-width:600px) {
+            .element-list-panel { display:none; }
+            .file-list { width:120px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 主工具栏 -->
+    <div class="toolbar">
+        <button class="primary" id="selectBtn">📁 选择文件</button>
+        <button id="undoBtn" class="undo-btn">↩️ 撤销 (Ctrl+Z)</button>
+        <button id="switchModeBtn">🔀 源码模式</button>
+        <button id="deleteModeBtn" class="danger">🗑️ 删除模式 (开)</button>
+        <button id="saveBtn">💾 保存</button>
+        <span class="file-count" id="fileCount">已加载 0 个文件</span>
+        <span class="hint" id="statusHint">💡 点击元素按 Delete 删除</span>
+        <input type="file" id="fileInput" multiple accept=".html,.htm">
+    </div>
+
+    <!-- 颜色图例 -->
+    <div class="color-legend" id="colorLegend">
+        <span class="legend-label">🎨 竖线颜色（预览）：</span>
+        <span class="empty-msg" id="legendEmptyMsg">（无竖线）</span>
+    </div>
+
+    <!-- 新增：文本处理工具栏 -->
+    <div class="text-toolbar" id="textToolbar">
+        <span class="label">📝 文本处理：</span>
+        <button id="markTotalBtn" class="mark-btn">🔍 标记总价/人均</button>
+        <button id="replaceTotalBtn" class="replace-btn">🔄 替换为备注</button>
+        <button id="markPriceBtn" class="mark-btn">💰 标记价格模式</button>
+        <button id="deletePriceBtn" class="delete-btn">🗑️ 删除价格模式</button>
+        <span class="info" id="textInfo"></span>
+    </div>
+
+    <div class="main">
+        <div class="file-list" id="fileList"></div>
+
+        <div class="editor-area">
+            <div class="mode-tip">
+                <span id="modeTip">📌 预览模式</span>
+                <span class="actions">
+                    <button id="refreshPreviewBtn">🔄 刷新</button>
+                    <button id="refreshTreeBtn">🌳 刷新元素列表</button>
+                </span>
+            </div>
+            <div class="editor-content" id="editorContent">
+                <div class="empty-state" id="emptyState">
+                    <div class="big-icon">📄</div>
+                    <p>点击「选择文件」加载 HTML</p>
+                    <button id="emptySelectBtn">选择文件</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="element-list-panel" id="elementListPanel">
+            <div class="panel-header">
+                <span>📋 元素列表</span>
+                <button id="collapseAllBtn">全部折叠</button>
+            </div>
+            <div class="tree-container" id="treeContainer">
+                <div style="padding:16px;color:#8b949e;text-align:center;font-size:13px;">
+                    加载文件后点击「刷新元素列表」
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            const files = [];
+            let currentIndex = -1;
+            let isSourceMode = false;
+            let isDeleteMode = true;
+            let selectedElement = null;
+            let deleteListenersAdded = false;
+            let verticalLineMap = new Map();
+            let nextColorIndex = 0;
+
+            // 撤销栈 - 存储 HTML 字符串
+            let undoStack = [];
+            const MAX_UNDO = 50;
+
+            // DOM refs
+            const fileInput = document.getElementById('fileInput');
+            const selectBtn = document.getElementById('selectBtn');
+            const fileListEl = document.getElementById('fileList');
+            const editorContent = document.getElementById('editorContent');
+            const emptyState = document.getElementById('emptyState');
+            const modeTip = document.getElementById('modeTip');
+            const switchModeBtn = document.getElementById('switchModeBtn');
+            const deleteModeBtn = document.getElementById('deleteModeBtn');
+            const saveBtn = document.getElementById('saveBtn');
+            const refreshPreviewBtn = document.getElementById('refreshPreviewBtn');
+            const refreshTreeBtn = document.getElementById('refreshTreeBtn');
+            const fileCount = document.getElementById('fileCount');
+            const emptySelectBtn = document.getElementById('emptySelectBtn');
+            const statusHint = document.getElementById('statusHint');
+            const treeContainer = document.getElementById('treeContainer');
+            const collapseAllBtn = document.getElementById('collapseAllBtn');
+            const colorLegend = document.getElementById('colorLegend');
+            const undoBtn = document.getElementById('undoBtn');
+            const textInfo = document.getElementById('textInfo');
+
+            // 文本处理按钮
+            const markTotalBtn = document.getElementById('markTotalBtn');
+            const replaceTotalBtn = document.getElementById('replaceTotalBtn');
+            const markPriceBtn = document.getElementById('markPriceBtn');
+            const deletePriceBtn = document.getElementById('deletePriceBtn');
+
+            deleteModeBtn.textContent = '🗑️ 删除模式 (开)';
+            deleteModeBtn.classList.add('danger');
+
+            // ---------- 工具函数 ----------
+            function getPathDirection(d) {
+                if (!d) return '?';
+                const tokens = d.trim().split(/\s*,\s*|\s+/);
+                const points = [];
+                let currentPoint = null;
+                for (let i = 0; i < tokens.length; i++) {
+                    const token = tokens[i];
+                    if (/^[MLHVCSQTAZ]$/i.test(token)) continue;
+                    const num = parseFloat(token);
+                    if (isNaN(num)) continue;
+                    if (!currentPoint) {
+                        currentPoint = { x: num, y: null };
+                    } else if (currentPoint.y === null) {
+                        currentPoint.y = num;
+                        points.push(currentPoint);
+                        currentPoint = null;
+                    }
+                }
+                if (points.length < 2) return '?';
+                const p1 = points[0];
+                const p2 = points[1];
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+                if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) return '·';
+                const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                if (Math.abs(angle) < 15 || Math.abs(angle) > 165) return '—';
+                if (Math.abs(Math.abs(angle) - 90) < 15) return '|';
+                if (angle > 0 && angle < 90) return '/';
+                if (angle > 90 && angle < 180) return '\\';
+                if (angle < 0 && angle > -90) return '\\';
+                if (angle < -90 && angle > -180) return '/';
+                return '~';
+            }
+
+            function getDistinctColor(index) {
+                const hue = (index * 137.508) % 360;
+                const lightnessGroup = index % 3;
+                let lightness;
+                if (lightnessGroup === 0) lightness = 75;
+                else if (lightnessGroup === 1) lightness = 50;
+                else lightness = 25;
+                return `hsl(${Math.round(hue)}, 90%, ${lightness}%)`;
+            }
+
+            // ---------- 颜色剥离 + 清理文本标记 ----------
+            function stripPreviewColorsAndMarks(doc) {
+                // 清理竖线预览颜色
+                const paths = doc.querySelectorAll('path[data-original-stroke]');
+                paths.forEach(p => {
+                    const original = p.getAttribute('data-original-stroke');
+                    if (original === '') {
+                        p.removeAttribute('stroke');
+                    } else {
+                        p.setAttribute('stroke', original);
+                    }
+                    p.removeAttribute('data-original-stroke');
+                    p.removeAttribute('data-preview-color');
+                    if (p.getAttribute('stroke-width') === '2') {
+                        p.removeAttribute('stroke-width');
+                    }
+                });
+
+                // 清理文本标记（总价/人均）
+                doc.querySelectorAll('.marked-total').forEach(el => {
+                    el.classList.remove('marked-total');
+                    el.style.color = ''; // 恢复原始颜色
+                });
+
+                // 清理价格模式标记（展开包裹span）
+                doc.querySelectorAll('.marked-price').forEach(el => {
+                    const parent = el.parentNode;
+                    const text = el.textContent;
+                    // 用文本节点替换span
+                    const textNode = doc.createTextNode(text);
+                    parent.replaceChild(textNode, el);
+                });
+            }
+
+            // ---------- 增强竖线（保留原有逻辑） ----------
+            function enhanceVerticalLines(doc) {
+                const allPaths = doc.querySelectorAll('path');
+                const newMap = new Map();
+
+                for (let el of allPaths) {
+                    const d = el.getAttribute('d');
+                    if (!d) continue;
+                    const dir = getPathDirection(d);
+                    if (dir === '|') {
+                        let originalColor = el.getAttribute('data-original-stroke');
+                        if (!originalColor) {
+                            originalColor = el.getAttribute('stroke');
+                            if (!originalColor || originalColor === 'none') {
+                                originalColor = null;
+                            }
+                        }
+                        el.setAttribute('data-original-stroke', originalColor || '');
+
+                        let previewColor = el.getAttribute('data-preview-color');
+                        if (!previewColor) {
+                            previewColor = getDistinctColor(nextColorIndex++);
+                            el.setAttribute('data-preview-color', previewColor);
+                        }
+                        el.setAttribute('stroke', previewColor);
+                        el.setAttribute('stroke-width', '2');
+
+                        if (!newMap.has(previewColor)) {
+                            newMap.set(previewColor, []);
+                        }
+                        newMap.get(previewColor).push(el);
+                    }
+                }
+                return newMap;
+            }
+
+            // ---------- 撤销 ----------
+            function performUndo() {
+                if (undoStack.length === 0) {
+                    statusHint.textContent = '⚠️ 没有可撤销的操作';
+                    return;
+                }
+                const prevHtml = undoStack.pop();
+                const iframe = document.querySelector('#editorContent iframe');
+                if (!iframe) {
+                    statusHint.textContent = '❌ 无法撤销，iframe 不可用';
+                    return;
+                }
+                // 恢复HTML
+                iframe.srcdoc = prevHtml;
+                // 等待加载完成
+                iframe.onload = function() {
+                    try {
+                        const doc = iframe.contentDocument;
+                        if (doc) {
+                            // 重新应用颜色和树
+                            nextColorIndex = 0; // 重置计数器，重新分配颜色身份（但已有data-preview-color会保留）
+                            // 但我们希望保留已有的data-preview-color，所以不应重置计数器，应该保留已有身份
+                            // 但撤销恢复的是旧内容，那些data-preview-color是之前分配的，我们无需重置计数器，只要保持一致性。
+                            // 但计数器可能已经很大，新分配的颜色会继续递增。
+                            verticalLineMap = enhanceVerticalLines(doc);
+                            buildTree(doc);
+                            updateLegend();
+                            if (!isDeleteMode) doc.designMode = 'on';
+                            else applyDeleteListeners();
+                            // 同步文件内容
+                            if (currentIndex !== -1 && files[currentIndex]) {
+                                files[currentIndex].content = doc.documentElement.outerHTML;
+                                files[currentIndex].modified = true;
+                                renderFileList();
+                            }
+                            statusHint.textContent = `↩️ 已撤销到上一步`;
+                        }
+                    } catch (e) {
+                        console.warn('撤销后加载失败', e);
+                    }
+                };
+                // 如果已经加载完成，手动触发
+                if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') {
+                    iframe.onload();
+                }
+            }
+
+            // ---------- 压入撤销栈（保存当前HTML） ----------
+            function pushUndo() {
+                const iframe = document.querySelector('#editorContent iframe');
+                if (!iframe || !iframe.contentDocument) return;
+                const doc = iframe.contentDocument;
+                // 保存当前完整HTML
+                const html = doc.documentElement.outerHTML;
+                undoStack.push(html);
+                if (undoStack.length > MAX_UNDO) undoStack.shift();
+            }
+
+            // ---------- 删除模式（保留原有） ----------
+            function clearDeleteSelection() {
+                if (selectedElement) {
+                    try { selectedElement.style.outline = ''; } catch (_) {}
+                    selectedElement = null;
+                }
+                document.querySelectorAll('.tree-node.selected').forEach(el => el.classList.remove('selected'));
+            }
+
+            function removeDeleteListeners() {
+                const iframe = document.querySelector('#editorContent iframe');
+                if (!iframe) return;
+                const doc = iframe.contentDocument;
+                if (!doc) return;
+                if (deleteListenersAdded) {
+                    doc.removeEventListener('mouseover', handleMouseOver);
+                    doc.removeEventListener('mouseout', handleMouseOut);
+                    doc.removeEventListener('click', handleClick, true);
+                    deleteListenersAdded = false;
+                }
+                try { doc.designMode = 'on'; } catch (_) {}
+                clearDeleteSelection();
+            }
+
+            function handleMouseOver(e) {
+                if (!isDeleteMode) return;
+                const target = e.target;
+                if (target && target.nodeType === 1 && target !== selectedElement) {
+                    target.style.outline = '2px dashed #0969da';
+                }
+            }
+            function handleMouseOut(e) {
+                if (!isDeleteMode) return;
+                const target = e.target;
+                if (target && target.nodeType === 1 && target !== selectedElement) {
+                    target.style.outline = '';
+                }
+            }
+            function handleClick(e) {
+                if (!isDeleteMode) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const target = e.target;
+                if (!target || target.nodeType !== 1) return;
+                const doc = target.ownerDocument;
+                if (target === doc.body || target === doc.documentElement) {
+                    statusHint.textContent = '⚠️ 不能删除页面根元素';
+                    return;
+                }
+                clearDeleteSelection();
+                selectedElement = target;
+                selectedElement.style.outline = '3px solid #cf222e';
+                statusHint.textContent = `✅ 已选中: <${target.tagName.toLowerCase()}> 按 Delete 键删除`;
+                highlightTreeNode(target);
+            }
+
+            function applyDeleteListeners() {
+                const iframe = document.querySelector('#editorContent iframe');
+                if (!iframe) return;
+                const doc = iframe.contentDocument;
+                if (!doc) return;
+                removeDeleteListeners();
+                try { doc.designMode = 'off'; } catch (_) {}
+                doc.addEventListener('mouseover', handleMouseOver);
+                doc.addEventListener('mouseout', handleMouseOut);
+                doc.addEventListener('click', handleClick, true);
+                deleteListenersAdded = true;
+                statusHint.textContent = '🗑️ 点击选择元素，按 Delete 键删除';
+            }
+
+            function toggleDeleteMode() {
+                if (currentIndex === -1) { alert('请先加载并选择一个文件'); return; }
+                isDeleteMode = !isDeleteMode;
+                if (isDeleteMode) {
+                    deleteModeBtn.textContent = '🗑️ 删除模式 (开)';
+                    deleteModeBtn.classList.add('danger');
+                    applyDeleteListeners();
+                } else {
+                    deleteModeBtn.textContent = '🗑️ 删除模式 (关)';
+                    deleteModeBtn.classList.remove('danger');
+                    removeDeleteListeners();
+                    const iframe = document.querySelector('#editorContent iframe');
+                    if (iframe && iframe.contentDocument) {
+                        try { iframe.contentDocument.designMode = 'on'; } catch (_) {}
+                    }
+                    statusHint.textContent = '💡 点击预览文字可编辑';
+                }
+            }
+
+            // ---------- 键盘事件（删除 + 撤销） ----------
+            document.addEventListener('keydown', function(e) {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                    e.preventDefault();
+                    performUndo();
+                    return;
+                }
+
+                if (e.key === 'Delete' && isDeleteMode && selectedElement) {
+                    e.preventDefault();
+                    const el = selectedElement;
+                    if (el && el.parentNode) {
+                        // 压入当前状态
+                        pushUndo();
+                        try {
+                            el.parentNode.removeChild(el);
+                            statusHint.textContent = '🗑️ 已删除元素（可撤销）';
+                            selectedElement = null;
+                            if (currentIndex !== -1 && files[currentIndex]) {
+                                const iframe = document.querySelector('#editorContent iframe');
+                                if (iframe && iframe.contentDocument) {
+                                    const doc = iframe.contentDocument;
+                                    files[currentIndex].content = doc.documentElement.outerHTML;
+                                    files[currentIndex].modified = true;
+                                    verticalLineMap = enhanceVerticalLines(doc);
+                                    buildTree(doc);
+                                    updateLegend();
+                                    renderFileList();
+                                }
+                            }
+                        } catch (err) {
+                            statusHint.textContent = '❌ 删除失败';
+                        }
+                    } else {
+                        statusHint.textContent = '⚠️ 没有可删除的元素';
+                        selectedElement = null;
+                    }
+                }
+            });
+
+            // ---------- 树节点高亮 ----------
+            function highlightTreeNode(domElement) {
+                document.querySelectorAll('.tree-node.selected').forEach(el => el.classList.remove('selected'));
+                if (!domElement) return;
+                const nodes = treeContainer.querySelectorAll('.tree-node');
+                for (let node of nodes) {
+                    if (node._element === domElement) {
+                        node.classList.add('selected');
+                        node.scrollIntoView({ block: 'nearest' });
+                        break;
+                    }
+                }
+            }
+
+            // ---------- 更新图例 ----------
+            function updateLegend() {
+                const label = colorLegend.querySelector('.legend-label');
+                colorLegend.innerHTML = '';
+                if (label) colorLegend.appendChild(label);
+                else {
+                    const lbl = document.createElement('span');
+                    lbl.className = 'legend-label';
+                    lbl.textContent = '🎨 竖线颜色（预览）：';
+                    colorLegend.appendChild(lbl);
+                }
+
+                if (verticalLineMap.size === 0) {
+                    const msg = document.createElement('span');
+                    msg.className = 'empty-msg';
+                    msg.textContent = '（无竖线）';
+                    colorLegend.appendChild(msg);
+                    return;
+                }
+
+                const sorted = Array.from(verticalLineMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+
+                for (let [color, elements] of sorted) {
+                    const item = document.createElement('span');
+                    item.className = 'legend-item';
+                    item.title = `颜色 ${color}，共 ${elements.length} 条竖线`;
+
+                    const swatch = document.createElement('span');
+                    swatch.className = 'swatch';
+                    swatch.style.backgroundColor = color;
+                    item.appendChild(swatch);
+
+                    const count = document.createElement('span');
+                    count.className = 'count';
+                    count.textContent = elements.length;
+                    item.appendChild(count);
+
+                    const del = document.createElement('span');
+                    del.className = 'del-icon';
+                    del.textContent = '✕';
+                    item.appendChild(del);
+
+                    item.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        if (!isDeleteMode) {
+                            statusHint.textContent = '⚠️ 请先开启删除模式';
+                            return;
+                        }
+                        deleteVerticalLines(color);
+                    });
+
+                    colorLegend.appendChild(item);
+                }
+            }
+
+            // ---------- 批量删除竖线（带撤销） ----------
+            function deleteVerticalLines(color) {
+                const elements = verticalLineMap.get(color);
+                if (!elements || elements.length === 0) return;
+                const iframe = document.querySelector('#editorContent iframe');
+                if (!iframe || !iframe.contentDocument) return;
+                const doc = iframe.contentDocument;
+
+                pushUndo(); // 保存当前状态
+
+                let removed = 0;
+                for (let el of elements) {
+                    if (el && el.parentNode) {
+                        try {
+                            el.parentNode.removeChild(el);
+                            removed++;
+                        } catch (e) {}
+                    }
+                }
+
+                statusHint.textContent = `🗑️ 已删除 ${removed} 条 ${color} 竖线（可撤销）`;
+                if (currentIndex !== -1 && files[currentIndex]) {
+                    files[currentIndex].content = doc.documentElement.outerHTML;
+                    files[currentIndex].modified = true;
+                    verticalLineMap = enhanceVerticalLines(doc);
+                    buildTree(doc);
+                    updateLegend();
+                    renderFileList();
+                }
+                clearDeleteSelection();
+            }
+
+            // ---------- 构建DOM树 ----------
+            function buildTree(doc) {
+                if (!doc) {
+                    const iframe = document.querySelector('#editorContent iframe');
+                    if (iframe && iframe.contentDocument) doc = iframe.contentDocument;
+                    else {
+                        treeContainer.innerHTML = '<div style="padding:16px;color:#8b949e;text-align:center;">请先加载文件并切换到预览模式</div>';
+                        return;
+                    }
+                }
+                const root = doc.documentElement;
+                if (!root) {
+                    treeContainer.innerHTML = '<div style="padding:16px;color:#8b949e;text-align:center;">无法获取DOM</div>';
+                    return;
+                }
+
+                function getTypeClass(tag) {
+                    if (tag === 'div') return 'type-div';
+                    if (tag === 'svg') return 'type-svg';
+                    if (tag === 'path') return 'type-path';
+                    if (tag === 'img') return 'type-img';
+                    return 'type-other';
+                }
+
+                function buildNode(el) {
+                    const tag = el.tagName ? el.tagName.toLowerCase() : '#text';
+                    const id = el.id ? ` id="${el.id}"` : '';
+                    const classes = el.className ? ` class="${el.className}"` : '';
+                    let label = `<span class="tag">&lt;${tag}${id}${classes}&gt;</span>`;
+
+                    const node = document.createElement('div');
+                    node.className = `tree-node ${getTypeClass(tag)}`;
+                    node._element = el;
+
+                    if (tag === 'path') {
+                        const d = el.getAttribute('d');
+                        const dir = getPathDirection(d);
+                        if (dir === '|') {
+                            let color = el.getAttribute('stroke');
+                            if (color && color !== 'none') {
+                                node.classList.add('vertical-line');
+                                node.style.borderLeftColor = color;
+                            }
+                        }
+                    }
+
+                    node.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        if (!isDeleteMode) {
+                            statusHint.textContent = '⚠️ 请先开启删除模式';
+                            return;
+                        }
+                        clearDeleteSelection();
+                        selectedElement = el;
+                        el.style.outline = '3px solid #cf222e';
+                        statusHint.textContent = `✅ 已选中: <${tag}> 按 Delete 键删除`;
+                        highlightTreeNode(el);
+                    });
+
+                    const hasChildren = el.children && el.children.length > 0;
+                    const toggleSpan = document.createElement('span');
+                    toggleSpan.className = 'toggle';
+                    if (hasChildren) {
+                        toggleSpan.textContent = '▾';
+                        toggleSpan.addEventListener('click', function(ev) {
+                            ev.stopPropagation();
+                            const childContainer = node.nextElementSibling;
+                            if (childContainer && childContainer.classList.contains('tree-children')) {
+                                childContainer.classList.toggle('collapsed');
+                                this.textContent = childContainer.classList.contains('collapsed') ? '▸' : '▾';
+                            }
+                        });
+                    } else {
+                        toggleSpan.textContent = '·';
+                    }
+                    node.appendChild(toggleSpan);
+
+                    const dirSpan = document.createElement('span');
+                    dirSpan.className = 'dir-indicator';
+                    let dirChar = '·';
+                    if (tag === 'path') {
+                        const d = el.getAttribute('d');
+                        dirChar = getPathDirection(d);
+                    } else if (tag === 'svg') {
+                        dirChar = '◇';
+                    } else if (tag === 'img') {
+                        dirChar = '🖼';
+                    } else if (tag === 'div') {
+                        dirChar = '▣';
+                    }
+                    dirSpan.textContent = dirChar;
+                    node.appendChild(dirSpan);
+
+                    const labelSpan = document.createElement('span');
+                    labelSpan.innerHTML = label;
+                    node.appendChild(labelSpan);
+
+                    const childrenDiv = document.createElement('div');
+                    childrenDiv.className = 'tree-children';
+                    if (hasChildren) {
+                        for (let child of el.children) {
+                            childrenDiv.appendChild(buildNode(child));
+                        }
+                    } else {
+                        let text = '';
+                        for (let n of el.childNodes) {
+                            if (n.nodeType === 3) text += n.textContent.trim();
+                        }
+                        if (text) {
+                            const textNode = document.createElement('div');
+                            textNode.className = 'tree-node type-other';
+                            textNode.style.cursor = 'default';
+                            textNode.innerHTML = `<span class="text">${text.substring(0, 30)}</span>`;
+                            childrenDiv.appendChild(textNode);
+                        }
+                    }
+
+                    const wrapper = document.createElement('div');
+                    wrapper.appendChild(node);
+                    if (hasChildren || childrenDiv.children.length > 0) {
+                        wrapper.appendChild(childrenDiv);
+                    }
+                    return wrapper;
+                }
+
+                treeContainer.innerHTML = '';
+                const rootWrapper = buildNode(root);
+                treeContainer.appendChild(rootWrapper);
+                updateLegend();
+            }
+
+            function refreshTree() {
+                if (isSourceMode) {
+                    statusHint.textContent = '⚠️ 请切换到预览模式才能查看元素列表';
+                    return;
+                }
+                setTimeout(() => {
+                    const iframe = document.querySelector('#editorContent iframe');
+                    if (iframe && iframe.contentDocument) {
+                        verticalLineMap = enhanceVerticalLines(iframe.contentDocument);
+                        buildTree(iframe.contentDocument);
+                        updateLegend();
+                    }
+                }, 200);
+            }
+
+            // ---------- 文本处理函数 ----------
+
+            // 辅助：获取iframe的document
+            function getDoc() {
+                const iframe = document.querySelector('#editorContent iframe');
+                if (iframe && iframe.contentDocument) return iframe.contentDocument;
+                return null;
+            }
+
+            // 标记 "总价" + "人均" 连续span
+            function markTotalPricePeople() {
+                const doc = getDoc();
+                if (!doc) { alert('请先加载文件并切换到预览模式'); return; }
+                const spans = doc.querySelectorAll('span');
+                let found = 0;
+                for (let i = 0; i < spans.length; i++) {
+                    const s1 = spans[i];
+                    if (s1.textContent.trim() === '总价') {
+                        const s2 = s1.nextElementSibling;
+                        if (s2 && s2.tagName === 'SPAN' && s2.textContent.trim() === '人均') {
+                            // 标记
+                            s1.classList.add('marked-total');
+                            s2.classList.add('marked-total');
+                            s1.style.color = 'gray';
+                            s2.style.color = 'gray';
+                            found++;
+                            i++; // 跳过下一个已处理
+                        }
+                    }
+                }
+                if (found === 0) {
+                    statusHint.textContent = '未找到 "总价"+"人均" 连续对';
+                } else {
+                    statusHint.textContent = `已标记 ${found} 对 "总价/人均"`;
+                    // 标记修改，压入撤销
+                    pushUndo();
+                    // 更新文件内容
+                    if (currentIndex !== -1 && files[currentIndex]) {
+                        files[currentIndex].content = doc.documentElement.outerHTML;
+                        files[currentIndex].modified = true;
+                        renderFileList();
+                    }
+                }
+            }
+
+            // 替换标记的总价/人均为 "备注"
+            function replaceTotalPricePeople() {
+                const doc = getDoc();
+                if (!doc) { alert('请先加载文件并切换到预览模式'); return; }
+                const marked = doc.querySelectorAll('.marked-total');
+                if (marked.length === 0) {
+                    statusHint.textContent = '没有已标记的 "总价/人均"';
+                    return;
+                }
+                pushUndo(); // 保存状态
+                marked.forEach(el => {
+                    el.textContent = '备注';
+                    el.classList.remove('marked-total');
+                    el.style.color = ''; // 恢复颜色
+                });
+                statusHint.textContent = `已替换 ${marked.length} 个 "总价/人均" 为 "备注"`;
+                if (currentIndex !== -1 && files[currentIndex]) {
+                    files[currentIndex].content = doc.documentElement.outerHTML;
+                    files[currentIndex].modified = true;
+                    renderFileList();
+                }
+                // 刷新树（可能不影响）
+                buildTree(doc);
+                updateLegend();
+            }
+
+            // 标记价格模式：数字 + 元/人
+            function markPricePattern() {
+                const doc = getDoc();
+                if (!doc) { alert('请先加载文件并切换到预览模式'); return; }
+                const walker = doc.createTreeWalker(
+                    doc.body,
+                    NodeFilter.SHOW_TEXT,
+                    null,
+                    false
+                );
+                const textNodes = [];
+                let node;
+                while (node = walker.nextNode()) {
+                    textNodes.push(node);
+                }
+
+                const regex = /(\d+)\s*元\/人/g;
+                let matched = 0;
+                textNodes.forEach(textNode => {
+                    const text = textNode.textContent;
+                    let match;
+                    let lastIndex = 0;
+                    const parts = [];
+                    while ((match = regex.exec(text)) !== null) {
+                        const fullMatch = match[0];
+                        const start = match.index;
+                        const end = regex.lastIndex;
+                        // 添加之前的部分
+                        if (start > lastIndex) {
+                            parts.push(text.substring(lastIndex, start));
+                        }
+                        // 添加包裹的span
+                        const span = doc.createElement('span');
+                        span.textContent = fullMatch;
+                        span.classList.add('marked-price');
+                        span.style.color = 'gray';
+                        parts.push(span);
+                        lastIndex = end;
+                        matched++;
+                    }
+                    if (lastIndex > 0) {
+                        // 添加剩余部分
+                        if (lastIndex < text.length) {
+                            parts.push(text.substring(lastIndex));
+                        }
+                        // 替换原文本节点
+                        const parent = textNode.parentNode;
+                        if (parent) {
+                            // 用文档片段替换
+                            const frag = doc.createDocumentFragment();
+                            parts.forEach(part => {
+                                if (typeof part === 'string') {
+                                    frag.appendChild(doc.createTextNode(part));
+                                } else {
+                                    frag.appendChild(part);
+                                }
+                            });
+                            parent.replaceChild(frag, textNode);
+                        }
+                    }
+                });
+
+                if (matched === 0) {
+                    statusHint.textContent = '未找到 "数字元/人" 模式';
+                } else {
+                    statusHint.textContent = `已标记 ${matched} 个价格模式`;
+                    pushUndo();
+                    if (currentIndex !== -1 && files[currentIndex]) {
+                        files[currentIndex].content = doc.documentElement.outerHTML;
+                        files[currentIndex].modified = true;
+                        renderFileList();
+                    }
+                    buildTree(doc);
+                    updateLegend();
+                }
+            }
+
+            // 删除所有标记的价格模式
+            function deletePricePattern() {
+                const doc = getDoc();
+                if (!doc) { alert('请先加载文件并切换到预览模式'); return; }
+                const marked = doc.querySelectorAll('.marked-price');
+                if (marked.length === 0) {
+                    statusHint.textContent = '没有已标记的价格模式';
+                    return;
+                }
+                pushUndo();
+                marked.forEach(el => {
+                    // 删除该span（即删除价格文本）
+                    el.parentNode.removeChild(el);
+                });
+                statusHint.textContent = `已删除 ${marked.length} 个价格模式`;
+                if (currentIndex !== -1 && files[currentIndex]) {
+                    files[currentIndex].content = doc.documentElement.outerHTML;
+                    files[currentIndex].modified = true;
+                    renderFileList();
+                }
+                buildTree(doc);
+                updateLegend();
+            }
+
+            // ---------- 同步内容 ----------
+            function syncCurrentContent() {
+                if (currentIndex === -1 || !files[currentIndex]) return;
+                const f = files[currentIndex];
+                if (isSourceMode) {
+                    const textarea = document.querySelector('#editorContent textarea');
+                    if (textarea) {
+                        f.content = textarea.value;
+                        f.modified = true;
+                    }
+                } else {
+                    const iframe = document.querySelector('#editorContent iframe');
+                    if (iframe && iframe.contentDocument) {
+                        try {
+                            const doc = iframe.contentDocument;
+                            // 剥离所有预览辅助（颜色+文本标记）
+                            stripPreviewColorsAndMarks(doc);
+                            f.content = doc.documentElement.outerHTML;
+                            f.modified = true;
+                            // 重新应用预览（因为剥离后我们需要重新显示预览）
+                            // 但这里我们不重新应用，因为 syncCurrentContent 通常用于切换或保存前，
+                            // 之后会重新调用 displayFile 或 refreshPreview 来重建预览。
+                            // 但为了保持界面一致性，我们在这里重新增强竖线（但标记不会再出现，因为已经剥离）
+                            // 我们只增强竖线，文本标记不再恢复（因为已剥离）。
+                            verticalLineMap = enhanceVerticalLines(doc);
+                            buildTree(doc);
+                            updateLegend();
+                            renderFileList();
+                        } catch (e) {}
+                    }
+                }
+                renderFileList();
+            }
+
+            // ---------- 显示文件 ----------
+            function displayFile(idx) {
+                nextColorIndex = 0;
+                undoStack = [];
+
+                if (idx < 0 || idx >= files.length) {
+                    editorContent.innerHTML = `<div class="empty-state"><div class="big-icon">📄</div><p>请选择一个文件</p></div>`;
+                    treeContainer.innerHTML = '<div style="padding:16px;color:#8b949e;text-align:center;">暂无文件</div>';
+                    colorLegend.innerHTML = '';
+                    return;
+                }
+                const f = files[idx];
+                if (isDeleteMode) {
+                    removeDeleteListeners();
+                }
+
+                editorContent.innerHTML = '';
+                if (isSourceMode) {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = f.content;
+                    textarea.addEventListener('input', () => {
+                        f.modified = true;
+                        renderFileList();
+                    });
+                    editorContent.appendChild(textarea);
+                    modeTip.innerHTML = '📝 源码模式';
+                    statusHint.textContent = '✏️ 编辑代码，修改实时标记';
+                    treeContainer.innerHTML = '<div style="padding:16px;color:#8b949e;text-align:center;">源码模式下无法显示元素列表</div>';
+                    const label = colorLegend.querySelector('.legend-label');
+                    colorLegend.innerHTML = '';
+                    if (label) colorLegend.appendChild(label);
+                    else {
+                        const lbl = document.createElement('span');
+                        lbl.className = 'legend-label';
+                        lbl.textContent = '🎨 竖线颜色（预览）：';
+                        colorLegend.appendChild(lbl);
+                    }
+                    const msg = document.createElement('span');
+                    msg.className = 'empty-msg';
+                    msg.textContent = '（源码模式）';
+                    colorLegend.appendChild(msg);
+                } else {
+                    const iframe = document.createElement('iframe');
+                    iframe.sandbox = 'allow-same-origin allow-scripts allow-forms allow-popups allow-modals';
+                    iframe.srcdoc = f.content;
+                    iframe.style.width = '100%';
+                    iframe.style.height = '100%';
+                    iframe.style.border = 'none';
+                    editorContent.appendChild(iframe);
+
+                    iframe.onload = function() {
+                        try {
+                            const doc = iframe.contentDocument;
+                            if (doc) {
+                                // 对文本标记进行清理（防止文件中残留标记）
+                                stripPreviewColorsAndMarks(doc);
+                                // 重新增强竖线
+                                verticalLineMap = enhanceVerticalLines(doc);
+                                buildTree(doc);
+                                updateLegend();
+                                if (!isDeleteMode) {
+                                    doc.designMode = 'on';
+                                    doc.body.style.cursor = 'text';
+                                } else {
+                                    applyDeleteListeners();
+                                }
+                            }
+                        } catch (e) {}
+                    };
+                    if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') {
+                        iframe.onload();
+                    }
+                    modeTip.innerHTML = '📌 预览模式';
+                    statusHint.textContent = isDeleteMode ? '🗑️ 删除模式已开启，点击元素按 Delete 删除' : '💡 点击预览文字可编辑';
+                }
+                switchModeBtn.textContent = isSourceMode ? '🔀 预览模式' : '🔀 源码模式';
+                renderFileList();
+            }
+
+            // ---------- 刷新预览 ----------
+            function refreshPreview() {
+                if (currentIndex === -1 || isSourceMode) return;
+                const f = files[currentIndex];
+                const iframe = document.querySelector('#editorContent iframe');
+                if (iframe) {
+                    // 先清理标记再加载
+                    const doc = iframe.contentDocument;
+                    if (doc) stripPreviewColorsAndMarks(doc);
+                    iframe.srcdoc = f.content;
+                    iframe.onload = function() {
+                        try {
+                            const doc = iframe.contentDocument;
+                            if (doc) {
+                                stripPreviewColorsAndMarks(doc);
+                                verticalLineMap = enhanceVerticalLines(doc);
+                                buildTree(doc);
+                                updateLegend();
+                                if (!isDeleteMode) doc.designMode = 'on';
+                                else applyDeleteListeners();
+                            }
+                        } catch (e) {}
+                    };
+                }
+            }
+
+            // ---------- 切换模式 ----------
+            function toggleMode() {
+                if (currentIndex === -1) { alert('请先加载并选择一个文件'); return; }
+                if (isDeleteMode) {
+                    removeDeleteListeners();
+                }
+                syncCurrentContent();
+                isSourceMode = !isSourceMode;
+                displayFile(currentIndex);
+                if (isDeleteMode && !isSourceMode) {
+                    applyDeleteListeners();
+                }
+            }
+
+            // ---------- 保存 ----------
+            function saveCurrentFile() {
+                if (currentIndex === -1) { alert('没有打开的文件'); return; }
+                syncCurrentContent(); // 会剥离所有标记并保存
+                const f = files[currentIndex];
+                const blob = new Blob([f.content], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = f.name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                f.modified = false;
+                renderFileList();
+                statusHint.textContent = `💾 已保存 ${f.name}（已清理所有预览标记）`;
+                // 重新加载预览以显示清理后的效果
+                refreshPreview();
+            }
+
+            // ---------- 文件列表 ----------
+            function renderFileList() {
+                fileListEl.innerHTML = '';
+                if (files.length === 0) {
+                    fileListEl.innerHTML = `<div style="padding:16px;color:#8b949e;text-align:center;">暂无文件</div>`;
+                    return;
+                }
+                files.forEach((f, idx) => {
+                    const div = document.createElement('div');
+                    div.className = 'file-item' + (idx === currentIndex ? ' active' : '');
+                    const badgeClass = f.modified ? 'badge modified' : 'badge';
+                    div.innerHTML = `<span>${f.name}</span><span class="${badgeClass}">${f.modified ? '✎' : ''}</span>`;
+                    div.addEventListener('click', () => {
+                        if (currentIndex === idx) return;
+                        if (currentIndex !== -1) syncCurrentContent();
+                        currentIndex = idx;
+                        displayFile(idx);
+                    });
+                    fileListEl.appendChild(div);
+                });
+                fileCount.textContent = `已加载 ${files.length} 个文件`;
+            }
+
+            // ---------- 加载文件 ----------
+            function loadFiles(fileList) {
+                const fileArray = Array.from(fileList);
+                if (fileArray.length === 0) return;
+                let loaded = 0;
+                fileArray.forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        files.push({ name: file.name, content: e.target.result, modified: false });
+                        loaded++;
+                        if (loaded === fileArray.length) {
+                            updateFileCount();
+                            if (files.length > 0 && currentIndex === -1) {
+                                currentIndex = 0;
+                                renderFileList();
+                                displayFile(0);
+                            } else {
+                                renderFileList();
+                            }
+                        }
+                    };
+                    reader.onerror = function() { alert(`读取文件 ${file.name} 失败`); loaded++; };
+                    reader.readAsText(file);
+                });
+                if (fileArray.length === 0) updateFileCount();
+            }
+
+            function updateFileCount() {
+                fileCount.textContent = `已加载 ${files.length} 个文件`;
+            }
+
+            // ---------- 事件绑定 ----------
+            selectBtn.addEventListener('click', () => fileInput.click());
+            emptySelectBtn.addEventListener('click', () => fileInput.click());
+
+            fileInput.addEventListener('change', function(e) {
+                if (this.files.length > 0) loadFiles(this.files);
+                this.value = '';
+            });
+
+            undoBtn.addEventListener('click', performUndo);
+
+            switchModeBtn.addEventListener('click', toggleMode);
+            deleteModeBtn.addEventListener('click', toggleDeleteMode);
+            saveBtn.addEventListener('click', saveCurrentFile);
+
+            refreshPreviewBtn.addEventListener('click', function() {
+                if (isSourceMode) {
+                    syncCurrentContent();
+                    if (isSourceMode) toggleMode();
+                    refreshPreview();
+                } else {
+                    refreshPreview();
+                }
+            });
+
+            refreshTreeBtn.addEventListener('click', refreshTree);
+            collapseAllBtn.addEventListener('click', function() {
+                const allChildren = treeContainer.querySelectorAll('.tree-children');
+                allChildren.forEach(ch => ch.classList.add('collapsed'));
+                const firstLevel = treeContainer.querySelectorAll('.tree-children');
+                if (firstLevel.length > 0) firstLevel[0].classList.remove('collapsed');
+            });
+
+            // 文本处理按钮事件
+            markTotalBtn.addEventListener('click', function() {
+                if (isSourceMode) { alert('请在预览模式下操作'); return; }
+                markTotalPricePeople();
+            });
+            replaceTotalBtn.addEventListener('click', function() {
+                if (isSourceMode) { alert('请在预览模式下操作'); return; }
+                replaceTotalPricePeople();
+            });
+            markPriceBtn.addEventListener('click', function() {
+                if (isSourceMode) { alert('请在预览模式下操作'); return; }
+                markPricePattern();
+            });
+            deletePriceBtn.addEventListener('click', function() {
+                if (isSourceMode) { alert('请在预览模式下操作'); return; }
+                deletePricePattern();
+            });
+
+            document.addEventListener('keydown', function(e) {
+                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                    e.preventDefault();
+                    saveCurrentFile();
+                }
+            });
+
+            document.body.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                document.body.style.backgroundColor = '#e6f3ff';
+            });
+            document.body.addEventListener('dragleave', () => {
+                document.body.style.backgroundColor = '';
+            });
+            document.body.addEventListener('drop', (e) => {
+                e.preventDefault();
+                document.body.style.backgroundColor = '';
+                const items = e.dataTransfer.files;
+                if (items.length > 0) loadFiles(items);
+            });
+
+            updateFileCount();
+            renderFileList();
+        })();
+    </script>
+</body>
+</html>
